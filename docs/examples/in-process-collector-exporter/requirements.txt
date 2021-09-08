@@ -1,0 +1,6 @@
+-e ../../../opentelemetry-api/
+-e ../../../opentelemetry-sdk/
+-e ../../../exporter/opentelemetry-exporter-otlp-proto-http/
+pybindgen
+setuptools
+wheel
