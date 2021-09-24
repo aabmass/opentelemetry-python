@@ -136,7 +136,7 @@ class Meter(ABC):
         For example, an observable counter could be used to report system CPU
         time periodically. Here is a basic implementation::
 
-            def cpu_time_callback() -> Iterable[Measurement]:
+            def cpu_time_callback() -> Iterable[Measurement[int]]:
                 measurements = []
                 with open("/proc/stat") as procstat:
                     procstat.readline()  # skip the first line
@@ -159,7 +159,7 @@ class Meter(ABC):
         To reduce memory usage, you can use generator callbacks instead of
         building the full list::
 
-            def cpu_time_callback() -> Iterable[Measurement]:
+            def cpu_time_callback() -> Iterable[Measurement[int]]:
                 with open("/proc/stat") as procstat:
                     procstat.readline()  # skip the first line
                     for line in procstat:
@@ -173,7 +173,7 @@ class Meter(ABC):
         which should return iterables of
         :class:`~opentelemetry.metrics.measurement.Measurement`::
 
-            def cpu_time_callback(states_to_include: set[str]) -> Iterable[Iterable[Measurement]]:
+            def cpu_time_callback(states_to_include: set[str]) -> Iterable[Iterable[Measurement[int]]]:
                 while True:
                     measurements = []
                     with open("/proc/stat") as procstat:

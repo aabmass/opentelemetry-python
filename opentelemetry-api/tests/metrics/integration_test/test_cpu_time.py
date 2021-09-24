@@ -63,7 +63,7 @@ softirq 1644603067 0 166540056 208 309152755 8936439 0 1354908 935642970 13 2229
     def test_cpu_time_callback(self):
         meter = _DefaultMeter("foo")
 
-        def cpu_time_callback() -> Iterable[Measurement]:
+        def cpu_time_callback() -> Iterable[Measurement[int]]:
             procstat = io.StringIO(self.procstat_str)
             procstat.readline()  # skip the first line
             for line in procstat:
@@ -111,7 +111,7 @@ softirq 1644603067 0 166540056 208 309152755 8936439 0 1354908 935642970 13 2229
         meter = _DefaultMeter("foo")
 
         def cpu_time_generator() -> Generator[
-            Iterable[Measurement], None, None
+            Iterable[Measurement[int]], None, None
         ]:
             while True:
                 measurements = []

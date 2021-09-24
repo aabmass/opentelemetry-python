@@ -98,6 +98,7 @@ nitpicky = True
 nitpick_ignore = [
     ("py:class", "ValueT"),
     ("py:class", "MetricT"),
+    ("py:obj", "opentelemetry.metrics.measurement.ValueT"),
     # Even if wrapt is added to intersphinx_mapping, sphinx keeps failing
     # with "class reference target not found: ObjectProxy".
     ("py:class", "ObjectProxy"),

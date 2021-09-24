@@ -20,13 +20,17 @@ from abc import ABC, abstractmethod
 from collections import abc as collections_abc
 from logging import getLogger
 from re import compile as compile_
-from typing import Callable, Generator, Iterable, Union
+from typing import Callable, Generator, Generic, Iterable, Union
 
-from opentelemetry.metrics.measurement import Measurement
+from opentelemetry.metrics.measurement import Measurement, ValueT
 
-_TInstrumentCallback = Callable[[], Iterable[Measurement]]
-_TInstrumentCallbackGenerator = Generator[Iterable[Measurement], None, None]
-TCallback = Union[_TInstrumentCallback, _TInstrumentCallbackGenerator]
+_InstrumentCallbackT = Callable[[], Iterable[Measurement[ValueT]]]
+_InstrumentCallbackGeneratorT = Generator[
+    Iterable[Measurement[ValueT]], None, None
+]
+CallbackT = Union[
+    _InstrumentCallbackT[ValueT], _InstrumentCallbackGeneratorT[ValueT]
+]
 
 
 _logger = getLogger(__name__)
@@ -77,12 +81,12 @@ class Synchronous(Instrument):
     pass
 
 
-class Asynchronous(Instrument):
+class Asynchronous(Generic[ValueT], Instrument):
     @abstractmethod
     def __init__(
         self,
         name,
-        callback: TCallback,
+        callback: CallbackT[ValueT],
         *args,
         unit="",
         description="",
@@ -101,12 +105,12 @@ class Asynchronous(Instrument):
 
     def _wrap_generator_callback(
         self,
-        generator_callback: _TInstrumentCallbackGenerator,
-    ) -> _TInstrumentCallback:
+        generator_callback: _InstrumentCallbackGeneratorT[ValueT],
+    ) -> _InstrumentCallbackT[ValueT]:
         """Wraps a generator style callback into a callable one"""
         has_items = True
 
-        def inner() -> Iterable[Measurement]:
+        def inner() -> Iterable[Measurement[ValueT]]:
             nonlocal has_items
             if not has_items:
                 return []
@@ -186,7 +190,7 @@ class DefaultUpDownCounter(UpDownCounter):
         return super().add(amount, attributes=attributes)
 
 
-class ObservableCounter(_Monotonic, Asynchronous):
+class ObservableCounter(Asynchronous[ValueT], _Monotonic):
     def callback(self):
         measurements = super().callback()
 
@@ -196,17 +200,20 @@ class ObservableCounter(_Monotonic, Asynchronous):
             yield measurement
 
 
-class DefaultObservableCounter(ObservableCounter):
+class DefaultObservableCounter(ObservableCounter[ValueT]):
     def __init__(self, name, callback, unit="", description=""):
         super().__init__(name, callback, unit=unit, description=description)
 
 
-class ObservableUpDownCounter(_NonMonotonic, Asynchronous):
+class ObservableUpDownCounter(
+    Asynchronous[ValueT],
+    _NonMonotonic,
+):
 
     pass
 
 
-class DefaultObservableUpDownCounter(ObservableUpDownCounter):
+class DefaultObservableUpDownCounter(ObservableUpDownCounter[ValueT]):
     def __init__(self, name, callback, unit="", description=""):
         super().__init__(name, callback, unit=unit, description=description)
 
@@ -225,10 +232,10 @@ class DefaultHistogram(Histogram):
         return super().record(amount, attributes=attributes)
 
 
-class ObservableGauge(_Grouping, Asynchronous):
+class ObservableGauge(Asynchronous[ValueT], _Grouping):
     pass
 
 
-class DefaultObservableGauge(ObservableGauge):
+class DefaultObservableGauge(ObservableGauge[ValueT]):
     def __init__(self, name, callback, unit="", description=""):
         super().__init__(name, callback, unit=unit, description=description)

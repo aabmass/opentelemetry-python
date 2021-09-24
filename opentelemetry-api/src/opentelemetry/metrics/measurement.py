@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union
+
+from typing import Generic, TypeVar
+
 from opentelemetry.util.types import Attributes
 
+ValueT = TypeVar("ValueT", int, float)
 
-class Measurement:
+
+class Measurement(Generic[ValueT]):
     """A measurement observed in an asynchronous instrument
 
     Return/yield instances of this class from asynchronous instrument callbacks.
@@ -26,14 +30,12 @@ class Measurement:
         attributes: The measurement's attributes
     """
 
-    def __init__(
-        self, value: Union[int, float], attributes: Attributes = None
-    ) -> None:
+    def __init__(self, value: ValueT, attributes: Attributes = None) -> None:
         self._value = value
         self._attributes = attributes
 
     @property
-    def value(self) -> Union[float, int]:
+    def value(self) -> ValueT:
         return self._value
 
     @property
