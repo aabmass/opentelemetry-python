@@ -13,12 +13,11 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Union
 
-from opentelemetry.util.types import Attributes
+from opentelemetry.util.types import Attributes, Number
 
 
 @dataclass(frozen=True)
 class Measurement:
-    value: Union[int, float]
+    value: Number
     attributes: Attributes = None

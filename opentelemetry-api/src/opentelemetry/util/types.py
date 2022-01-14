@@ -42,3 +42,4 @@ AttributesAsKey = Tuple[
     ],
     ...,
 ]
+Number = Union[float, int]

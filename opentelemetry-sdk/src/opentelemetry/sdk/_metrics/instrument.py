@@ -14,7 +14,7 @@
 
 # pylint: disable=too-many-ancestors
 
-from typing import Dict, Generator, Iterable, Union
+from typing import Dict, Generator, Iterable
 
 from opentelemetry._metrics.instrument import CallbackT
 from opentelemetry._metrics.instrument import Counter as APICounter
@@ -32,6 +32,7 @@ from opentelemetry._metrics.instrument import UpDownCounter as APIUpDownCounter
 from opentelemetry.sdk._metrics.measurement import Measurement
 from opentelemetry.sdk._metrics.measurement_consumer import MeasurementConsumer
 from opentelemetry.sdk.util.instrumentation import InstrumentationInfo
+from opentelemetry.util.types import Number
 
 
 class _Synchronous:
@@ -84,7 +85,7 @@ class _Asynchronous:
 
 class Counter(_Synchronous, APICounter):
     def add(
-        self, amount: Union[int, float], attributes: Dict[str, str] = None
+        self, amount: Number, attributes: Dict[str, str] = None
     ):
         if amount < 0:
             raise Exception("amount must be non negative")
@@ -96,7 +97,7 @@ class Counter(_Synchronous, APICounter):
 
 class UpDownCounter(_Synchronous, APIUpDownCounter):
     def add(
-        self, amount: Union[int, float], attributes: Dict[str, str] = None
+        self, amount: Number, attributes: Dict[str, str] = None
     ):
         self._measurement_consumer.consume_measurement(
             Measurement(amount, attributes)

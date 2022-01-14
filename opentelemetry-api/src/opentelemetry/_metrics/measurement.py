@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union
-
-from opentelemetry.util.types import Attributes
+from opentelemetry.util.types import Attributes, Number
 
 
 class Measurement:
@@ -27,14 +25,12 @@ class Measurement:
         attributes: The measurement's attributes
     """
 
-    def __init__(
-        self, value: Union[int, float], attributes: Attributes = None
-    ) -> None:
+    def __init__(self, value: Number, attributes: Attributes = None) -> None:
         self._value = value
         self._attributes = attributes
 
     @property
-    def value(self) -> Union[float, int]:
+    def value(self) -> Number:
         return self._value
 
     @property
