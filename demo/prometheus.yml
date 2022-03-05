@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: testmetrics
+    static_configs:
+      - targets:
+          - localhost:8000
+  - job_name: java_micrometer_demo
+    static_configs:
+      - targets:
+          - localhost:9464
