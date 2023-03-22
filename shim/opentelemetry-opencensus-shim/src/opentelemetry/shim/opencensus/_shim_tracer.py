@@ -15,7 +15,9 @@
 import logging
 
 import wrapt
+from opencensus.trace import execution_context
 from opencensus.trace.blank_span import BlankSpan
+from opencensus.trace.span_context import SpanContext
 from opencensus.trace.tracers.base import Tracer as BaseTracer
 
 from opentelemetry import context, trace
@@ -39,9 +41,14 @@ def get_shim_span_in_context() -> ShimSpan:
 # pylint: disable=abstract-method
 class ShimTracer(wrapt.ObjectProxy):
     def __init__(
-        self, wrapped: BaseTracer, *, otel_tracer: trace.Tracer
+        self,
+        wrapped: BaseTracer,
+        *,
+        oc_span_context: SpanContext,
+        otel_tracer: trace.Tracer
     ) -> None:
         super().__init__(wrapped)
+        self.self_oc_span_context = oc_span_context
         self._self_otel_tracer = otel_tracer
 
     # For now, finish() is not implemented by the shim. It would require keeping a list of all
@@ -67,6 +74,9 @@ class ShimTracer(wrapt.ObjectProxy):
         # equivalent to the below. This can cause context to leak but is equivalent.
         # pylint: disable=protected-access
         shim_span._self_token = context.attach(ctx)
+        # Also set it in OC's context, equivalent to
+        # https://github.com/census-instrumentation/opencensus-python/blob/2e08df591b507612b3968be8c2538dedbf8fab37/opencensus/trace/tracers/context_tracer.py#L94
+        execution_context.set_current_span(shim_span)
         return shim_span
 
     def end_span(self):
@@ -79,8 +89,12 @@ class ShimTracer(wrapt.ObjectProxy):
             return
 
         span.finish()
+
         # pylint: disable=protected-access
         context.detach(span._self_token)
+        # Also reset the OC execution_context, equivalent to
+        # https://github.com/census-instrumentation/opencensus-python/blob/2e08df591b507612b3968be8c2538dedbf8fab37/opencensus/trace/tracers/context_tracer.py#L114-L117
+        execution_context.set_current_span(self.current_span())
 
     # pylint: disable=no-self-use
     def current_span(self):
