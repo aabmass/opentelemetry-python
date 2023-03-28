@@ -10,7 +10,7 @@ env:
   # Otherwise, set variable to the commit of your branch on
   # opentelemetry-python-contrib which is compatible with these Core repo
   # changes.
-  CONTRIB_REPO_SHA: ca2c23fd3b91c48f2b6515658993480f634cf1b2
+  CONTRIB_REPO_SHA: 7fb0340445f5e0164bc59a3af1bf5836393013f4
   # This is needed because we do not clone the core repo in contrib builds anymore.
   # When running contrib builds as part of core builds, we use actions/checkout@v2 which
   # does not set an environment variable (simply just runs tox), which is different when
@@ -56,7 +56,7 @@ jobs:
         path: |
           .tox
           ~/.cache/pip
-        key: v3-tox-cache-${{ env.RUN_MATRIX_COMBINATION }}-${{ hashFiles('tox.ini',
+        key: v4-tox-cache-${{ env.RUN_MATRIX_COMBINATION }}-${{ hashFiles('tox.ini',
           'dev-requirements.txt') }}-core
     - name: Windows does not let git check out files with long names
       if: ${{ matrix.os == 'windows-2019'}}
@@ -112,7 +112,7 @@ jobs:
         path: |
           .tox
           ~/.cache/pip
-        key: v3-tox-cache-${{ matrix.tox-environment }}-${{ hashFiles('tox.ini', 'dev-requirements.txt')
+        key: v4-tox-cache-${{ matrix.tox-environment }}-${{ hashFiles('tox.ini', 'dev-requirements.txt')
           }}-core
     - name: run tox
       run: tox -e ${{ matrix.tox-environment }}
@@ -156,7 +156,7 @@ jobs:
         path: |
           .tox
           ~/.cache/pip
-        key: v3-tox-cache-${{ matrix.python-version }}-${{ matrix.package }}-${{ matrix.os
+        key: v4-tox-cache-${{ matrix.python-version }}-${{ matrix.package }}-${{ matrix.os
           }}-${{ hashFiles('tox.ini', 'dev-requirements.txt') }}-contrib
     - name: run tox
       run: tox -f ${{ matrix.python-version }}-${{ matrix.package }}
