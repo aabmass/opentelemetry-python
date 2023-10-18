@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import abc
-import json
-import sys
 import unittest
 from typing import Dict, List
 
@@ -24,7 +22,7 @@ from opentelemetry.exporter.zipkin.encoder import (
 )
 from opentelemetry.exporter.zipkin.node_endpoint import NodeEndpoint
 from opentelemetry.sdk import trace
-from opentelemetry.sdk.util.instrumentation import InstrumentationInfo
+from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 from opentelemetry.trace import TraceFlags
 from opentelemetry.trace.status import Status, StatusCode
 
@@ -96,15 +94,15 @@ class CommonEncoderTestCases:
             )
 
         def test_nsec_to_usec_round(self):
-            base_time_nsec = 683647322 * 10 ** 9
+            base_time_nsec = 683647322 * 10**9
             for nsec in (
                 base_time_nsec,
-                base_time_nsec + 150 * 10 ** 6,
-                base_time_nsec + 300 * 10 ** 6,
-                base_time_nsec + 400 * 10 ** 6,
+                base_time_nsec + 150 * 10**6,
+                base_time_nsec + 300 * 10**6,
+                base_time_nsec + 400 * 10**6,
             ):
                 self.assertEqual(
-                    (nsec + 500) // 10 ** 3,
+                    (nsec + 500) // 10**3,
                     self.get_encoder_default()._nsec_to_usec_round(nsec),
                 )
 
@@ -168,8 +166,8 @@ class CommonEncoderTestCases:
         def get_data_for_max_tag_length_test(
             max_tag_length: int,
         ) -> (trace._Span, Dict):
-            start_time = 683647322 * 10 ** 9  # in ns
-            duration = 50 * 10 ** 6
+            start_time = 683647322 * 10**9  # in ns
+            duration = 50 * 10**6
             end_time = start_time + duration
 
             span = trace._Span(
@@ -332,18 +330,18 @@ class CommonEncoderTestCases:
         def get_exhaustive_otel_span_list() -> List[trace._Span]:
             trace_id = 0x6E0C63257DE34C926F9EFCD03927272E
 
-            base_time = 683647322 * 10 ** 9  # in ns
+            base_time = 683647322 * 10**9  # in ns
             start_times = (
                 base_time,
-                base_time + 150 * 10 ** 6,
-                base_time + 300 * 10 ** 6,
-                base_time + 400 * 10 ** 6,
+                base_time + 150 * 10**6,
+                base_time + 300 * 10**6,
+                base_time + 400 * 10**6,
             )
             end_times = (
-                start_times[0] + (50 * 10 ** 6),
-                start_times[1] + (100 * 10 ** 6),
-                start_times[2] + (200 * 10 ** 6),
-                start_times[3] + (300 * 10 ** 6),
+                start_times[0] + (50 * 10**6),
+                start_times[1] + (100 * 10**6),
+                start_times[2] + (200 * 10**6),
+                start_times[3] + (300 * 10**6),
             )
 
             parent_span_context = trace_api.SpanContext(
@@ -366,7 +364,7 @@ class CommonEncoderTestCases:
                 events=(
                     trace.Event(
                         name="event0",
-                        timestamp=base_time + 50 * 10 ** 6,
+                        timestamp=base_time + 50 * 10**6,
                         attributes={
                             "annotation_bool": True,
                             "annotation_string": "annotation_test",
@@ -417,7 +415,7 @@ class CommonEncoderTestCases:
                 context=other_context,
                 parent=None,
                 resource=trace.Resource({}),
-                instrumentation_info=InstrumentationInfo(
+                instrumentation_scope=InstrumentationScope(
                     name="name", version="version"
                 ),
             )
@@ -429,14 +427,14 @@ class CommonEncoderTestCases:
     # pylint: disable=W0223
     class CommonJsonEncoderTest(CommonEncoderTest, abc.ABC):
         def test_encode_trace_id(self):
-            for trace_id in (1, 1024, 2 ** 32, 2 ** 64, 2 ** 65):
+            for trace_id in (1, 1024, 2**32, 2**64, 2**65):
                 self.assertEqual(
                     format(trace_id, "032x"),
                     self.get_encoder_default()._encode_trace_id(trace_id),
                 )
 
         def test_encode_span_id(self):
-            for span_id in (1, 1024, 2 ** 8, 2 ** 16, 2 ** 32, 2 ** 64):
+            for span_id in (1, 1024, 2**8, 2**16, 2**32, 2**64):
                 self.assertEqual(
                     format(span_id, "016x"),
                     self.get_encoder_default()._encode_span_id(span_id),
@@ -478,28 +476,4 @@ class CommonEncoderTestCases:
             return popped_item
 
         def assert_equal_encoded_spans(self, expected_spans, actual_spans):
-            if sys.version_info.major == 3 and sys.version_info.minor <= 5:
-                expected_spans = json.loads(expected_spans)
-                actual_spans = json.loads(actual_spans)
-                for expected_span, actual_span in zip(
-                    expected_spans, actual_spans
-                ):
-                    actual_annotations = self.pop_and_sort(
-                        actual_span, "annotations", "timestamp"
-                    )
-                    expected_annotations = self.pop_and_sort(
-                        expected_span, "annotations", "timestamp"
-                    )
-                    expected_binary_annotations = self.pop_and_sort(
-                        expected_span, "binaryAnnotations", "key"
-                    )
-                    actual_binary_annotations = self.pop_and_sort(
-                        actual_span, "binaryAnnotations", "key"
-                    )
-                    self.assertEqual(actual_span, expected_span)
-                    self.assertEqual(actual_annotations, expected_annotations)
-                    self.assertEqual(
-                        actual_binary_annotations, expected_binary_annotations
-                    )
-            else:
-                self.assertEqual(expected_spans, actual_spans)
+            self.assertEqual(expected_spans, actual_spans)

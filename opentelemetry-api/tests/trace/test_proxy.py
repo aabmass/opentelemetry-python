@@ -13,33 +13,45 @@
 # limitations under the License.
 
 # pylint: disable=W0212,W0222,W0221
-
+import typing
 import unittest
+from contextlib import contextmanager
 
 from opentelemetry import trace
-from opentelemetry.trace.span import INVALID_SPAN_CONTEXT, NonRecordingSpan
+from opentelemetry.test.globals_test import TraceGlobalsTest
+from opentelemetry.trace.span import (
+    INVALID_SPAN_CONTEXT,
+    NonRecordingSpan,
+    Span,
+)
 
 
-class TestProvider(trace._DefaultTracerProvider):
+class TestProvider(trace.NoOpTracerProvider):
     def get_tracer(
-        self, instrumentation_module_name, instrumentaiton_library_version=None
-    ):
+        self,
+        instrumenting_module_name: str,
+        instrumenting_library_version: typing.Optional[str] = None,
+        schema_url: typing.Optional[str] = None,
+    ) -> trace.Tracer:
         return TestTracer()
 
 
-class TestTracer(trace._DefaultTracer):
+class TestTracer(trace.NoOpTracer):
     def start_span(self, *args, **kwargs):
         return TestSpan(INVALID_SPAN_CONTEXT)
+
+    @contextmanager
+    def start_as_current_span(self, *args, **kwargs):  # type: ignore
+        with trace.use_span(self.start_span(*args, **kwargs)) as span:  # type: ignore
+            yield span
 
 
 class TestSpan(NonRecordingSpan):
     pass
 
 
-class TestProxy(unittest.TestCase):
+class TestProxy(TraceGlobalsTest, unittest.TestCase):
     def test_proxy_tracer(self):
-        original_provider = trace._TRACER_PROVIDER
-
         provider = trace.get_tracer_provider()
         # proxy provider
         self.assertIsInstance(provider, trace.ProxyTracerProvider)
@@ -57,6 +69,9 @@ class TestProxy(unittest.TestCase):
         # set a real provider
         trace.set_tracer_provider(TestProvider())
 
+        # get_tracer_provider() now returns the real provider
+        self.assertIsInstance(trace.get_tracer_provider(), TestProvider)
+
         # tracer provider now returns real instance
         self.assertIsInstance(trace.get_tracer_provider(), TestProvider)
 
@@ -69,4 +84,20 @@ class TestProxy(unittest.TestCase):
         with tracer.start_span("") as span:
             self.assertIsInstance(span, TestSpan)
 
-        trace._TRACER_PROVIDER = original_provider
+    def test_late_config(self):
+        # get a tracer and instrument a function as we would at the
+        # root of a module
+        tracer = trace.get_tracer("test")
+
+        @tracer.start_as_current_span("span")
+        def my_function() -> Span:
+            return trace.get_current_span()
+
+        # call function before configuring tracing provider, should
+        # return INVALID_SPAN from the NoOpTracer
+        self.assertEqual(my_function(), trace.INVALID_SPAN)
+
+        # configure tracing provider
+        trace.set_tracer_provider(TestProvider())
+        # call function again, we should now be getting a TestSpan
+        self.assertIsInstance(my_function(), TestSpan)

@@ -1,9 +1,22 @@
-from __future__ import print_function
+# Copyright The OpenTelemetry Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from concurrent.futures import ThreadPoolExecutor
 
 from opentracing.ext import tags
 
+# pylint: disable=import-error
 from ..otel_ot_shim_tracer import MockTracer
 from ..testcase import OpenTelemetryTestCase
 from ..utils import get_logger, get_one_by_operation_name
@@ -29,7 +42,7 @@ class Client:
         self.executor.submit(before_handler).result()
         self.executor.submit(after_handler).result()
 
-        return "%s::response" % message
+        return f"{message}::response"
 
     def send(self, message):
         return self.executor.submit(self.send_task, message)
@@ -47,7 +60,7 @@ class TestThreads(OpenTelemetryTestCase):
     activate span. So one issue here is setting correct parent span.
     """
 
-    def setUp(self):
+    def setUp(self):  # pylint: disable=invalid-name
         self.tracer = MockTracer()
         self.executor = ThreadPoolExecutor(max_workers=3)
         self.client = Client(RequestHandler(self.tracer), self.executor)

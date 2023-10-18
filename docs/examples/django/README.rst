@@ -84,16 +84,14 @@ output similar to this one:
             "status_code": "OK"
         },
         "attributes": {
-            "http.method": "GET",
-            "http.server_name": "localhost",
-            "http.scheme": "http",
-            "host.port": 8000,
-            "http.host": "localhost:8000",
-            "http.url": "http://localhost:8000/?param=hello",
-            "net.peer.ip": "127.0.0.1",
-            "http.flavor": "1.1",
-            "http.status_text": "OK",
-            "http.status_code": 200
+            "http.request.method": "GET",
+            "server.address": "localhost",
+            "url.scheme": "http",
+            "server.port": 8000,
+            "url.full": "http://localhost:8000/?param=hello",
+            "server.socket.address": "127.0.0.1",
+            "network.protocol.version": "1.1",
+            "http.response.status_code": 200
         },
         "events": [],
         "links": []
@@ -113,7 +111,7 @@ Auto Instrumentation
 --------------------
 
 This same example can be run using auto instrumentation. Comment out the call
-to ``DjangoInstrumento().instrument()`` in ``main``, then Run the django app
+to ``DjangoInstrumentor().instrument()`` in ``main``, then Run the django app
 with ``opentelemetry-instrument python manage.py runserver --noreload``.
 Repeat the steps with the client, the result should be the same.
 

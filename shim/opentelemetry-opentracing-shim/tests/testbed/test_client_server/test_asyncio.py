@@ -1,10 +1,23 @@
-from __future__ import print_function
+# Copyright The OpenTelemetry Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import asyncio
 
 import opentracing
 from opentracing.ext import tags
 
+# pylint: disable=import-error
 from ..otel_ot_shim_tracer import MockTracer
 from ..testcase import OpenTelemetryTestCase
 from ..utils import get_logger, get_one_by_tag, stop_loop_when
@@ -16,7 +29,7 @@ class Server:
     def __init__(self, *args, **kwargs):
         tracer = kwargs.pop("tracer")
         queue = kwargs.pop("queue")
-        super(Server, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.tracer = tracer
         self.queue = queue
@@ -52,7 +65,7 @@ class Client:
 
 
 class TestAsyncio(OpenTelemetryTestCase):
-    def setUp(self):
+    def setUp(self):  # pylint: disable=invalid-name
         self.tracer = MockTracer()
         self.queue = asyncio.Queue()
         self.loop = asyncio.get_event_loop()

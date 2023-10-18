@@ -14,15 +14,22 @@
 
 import collections
 import logging
+import os
 import sys
 import threading
 import typing
 from enum import Enum
 from os import environ, linesep
+from time import time_ns
 from typing import Optional
 
-from opentelemetry.context import Context, attach, detach, set_value
-from opentelemetry.instrumentation.utils import _SUPPRESS_INSTRUMENTATION_KEY
+from opentelemetry.context import (
+    _SUPPRESS_INSTRUMENTATION_KEY,
+    Context,
+    attach,
+    detach,
+    set_value,
+)
 from opentelemetry.sdk.environment_variables import (
     OTEL_BSP_EXPORT_TIMEOUT,
     OTEL_BSP_MAX_EXPORT_BATCH_SIZE,
@@ -30,7 +37,15 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_BSP_SCHEDULE_DELAY,
 )
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
-from opentelemetry.util._time import _time_ns
+from opentelemetry.util._once import Once
+
+_DEFAULT_SCHEDULE_DELAY_MILLIS = 5000
+_DEFAULT_MAX_EXPORT_BATCH_SIZE = 512
+_DEFAULT_EXPORT_TIMEOUT_MILLIS = 30000
+_DEFAULT_MAX_QUEUE_SIZE = 2048
+_ENV_VAR_INT_VALUE_ERROR_MESSAGE = (
+    "Unable to parse value for %s as integer. Defaulting to %s."
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +81,12 @@ class SpanExporter:
         """Shuts down the exporter.
 
         Called when the SDK is shut down.
+        """
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        """Hint to ensure that the export of any spans the exporter has received
+        prior to the call to ForceFlush SHOULD be completed as soon as possible, preferably
+        before returning from this method.
         """
 
 
@@ -113,6 +134,9 @@ class _FlushRequest:
         self.num_spans = 0
 
 
+_BSP_RESET_ONCE = Once()
+
+
 class BatchSpanProcessor(SpanProcessor):
     """Batch span processor implementation.
 
@@ -136,46 +160,35 @@ class BatchSpanProcessor(SpanProcessor):
         max_export_batch_size: int = None,
         export_timeout_millis: float = None,
     ):
-
         if max_queue_size is None:
-            max_queue_size = int(environ.get(OTEL_BSP_MAX_QUEUE_SIZE, 2048))
+            max_queue_size = BatchSpanProcessor._default_max_queue_size()
 
         if schedule_delay_millis is None:
-            schedule_delay_millis = int(
-                environ.get(OTEL_BSP_SCHEDULE_DELAY, 5000)
+            schedule_delay_millis = (
+                BatchSpanProcessor._default_schedule_delay_millis()
             )
 
         if max_export_batch_size is None:
-            max_export_batch_size = int(
-                environ.get(OTEL_BSP_MAX_EXPORT_BATCH_SIZE, 512)
+            max_export_batch_size = (
+                BatchSpanProcessor._default_max_export_batch_size()
             )
 
         if export_timeout_millis is None:
-            export_timeout_millis = int(
-                environ.get(OTEL_BSP_EXPORT_TIMEOUT, 30000)
+            export_timeout_millis = (
+                BatchSpanProcessor._default_export_timeout_millis()
             )
 
-        if max_queue_size <= 0:
-            raise ValueError("max_queue_size must be a positive integer.")
-
-        if schedule_delay_millis <= 0:
-            raise ValueError("schedule_delay_millis must be positive.")
-
-        if max_export_batch_size <= 0:
-            raise ValueError(
-                "max_export_batch_size must be a positive integer."
-            )
-
-        if max_export_batch_size > max_queue_size:
-            raise ValueError(
-                "max_export_batch_size must be less than or equal to max_queue_size."
-            )
+        BatchSpanProcessor._validate_arguments(
+            max_queue_size, schedule_delay_millis, max_export_batch_size
+        )
 
         self.span_exporter = span_exporter
         self.queue = collections.deque(
             [], max_queue_size
         )  # type: typing.Deque[Span]
-        self.worker_thread = threading.Thread(target=self.worker, daemon=True)
+        self.worker_thread = threading.Thread(
+            name="OtelBatchSpanProcessor", target=self.worker, daemon=True
+        )
         self.condition = threading.Condition(threading.Lock())
         self._flush_request = None  # type: typing.Optional[_FlushRequest]
         self.schedule_delay_millis = schedule_delay_millis
@@ -190,6 +203,12 @@ class BatchSpanProcessor(SpanProcessor):
             None
         ] * self.max_export_batch_size  # type: typing.List[typing.Optional[Span]]
         self.worker_thread.start()
+        # Only available in *nix since py37.
+        if hasattr(os, "register_at_fork"):
+            os.register_at_fork(
+                after_in_child=self._at_fork_reinit
+            )  # pylint: disable=protected-access
+        self._pid = os.getpid()
 
     def on_start(
         self, span: Span, parent_context: typing.Optional[Context] = None
@@ -202,6 +221,9 @@ class BatchSpanProcessor(SpanProcessor):
             return
         if not span.context.trace_flags.sampled:
             return
+        if self._pid != os.getpid():
+            _BSP_RESET_ONCE.do_once(self._at_fork_reinit)
+
         if len(self.queue) == self.max_queue_size:
             if not self._spans_dropped:
                 logger.warning("Queue is full, likely spans will be dropped.")
@@ -212,6 +234,18 @@ class BatchSpanProcessor(SpanProcessor):
         if len(self.queue) >= self.max_export_batch_size:
             with self.condition:
                 self.condition.notify()
+
+    def _at_fork_reinit(self):
+        self.condition = threading.Condition(threading.Lock())
+        self.queue.clear()
+
+        # worker_thread is local to a process, only the thread that issued fork continues
+        # to exist. A new worker thread must be started in child process.
+        self.worker_thread = threading.Thread(
+            name="OtelBatchSpanProcessor", target=self.worker, daemon=True
+        )
+        self.worker_thread.start()
+        self._pid = os.getpid()
 
     def worker(self):
         timeout = self.schedule_delay_millis / 1e3
@@ -240,9 +274,9 @@ class BatchSpanProcessor(SpanProcessor):
                         break
 
             # subtract the duration of this export call to the next timeout
-            start = _time_ns()
+            start = time_ns()
             self._export(flush_request)
-            end = _time_ns()
+            end = time_ns()
             duration = (end - start) / 1e9
             timeout = self.schedule_delay_millis / 1e3 - duration
 
@@ -378,6 +412,89 @@ class BatchSpanProcessor(SpanProcessor):
         self.worker_thread.join()
         self.span_exporter.shutdown()
 
+    @staticmethod
+    def _default_max_queue_size():
+        try:
+            return int(
+                environ.get(OTEL_BSP_MAX_QUEUE_SIZE, _DEFAULT_MAX_QUEUE_SIZE)
+            )
+        except ValueError:
+            logger.exception(
+                _ENV_VAR_INT_VALUE_ERROR_MESSAGE,
+                OTEL_BSP_MAX_QUEUE_SIZE,
+                _DEFAULT_MAX_QUEUE_SIZE,
+            )
+            return _DEFAULT_MAX_QUEUE_SIZE
+
+    @staticmethod
+    def _default_schedule_delay_millis():
+        try:
+            return int(
+                environ.get(
+                    OTEL_BSP_SCHEDULE_DELAY, _DEFAULT_SCHEDULE_DELAY_MILLIS
+                )
+            )
+        except ValueError:
+            logger.exception(
+                _ENV_VAR_INT_VALUE_ERROR_MESSAGE,
+                OTEL_BSP_SCHEDULE_DELAY,
+                _DEFAULT_SCHEDULE_DELAY_MILLIS,
+            )
+            return _DEFAULT_SCHEDULE_DELAY_MILLIS
+
+    @staticmethod
+    def _default_max_export_batch_size():
+        try:
+            return int(
+                environ.get(
+                    OTEL_BSP_MAX_EXPORT_BATCH_SIZE,
+                    _DEFAULT_MAX_EXPORT_BATCH_SIZE,
+                )
+            )
+        except ValueError:
+            logger.exception(
+                _ENV_VAR_INT_VALUE_ERROR_MESSAGE,
+                OTEL_BSP_MAX_EXPORT_BATCH_SIZE,
+                _DEFAULT_MAX_EXPORT_BATCH_SIZE,
+            )
+            return _DEFAULT_MAX_EXPORT_BATCH_SIZE
+
+    @staticmethod
+    def _default_export_timeout_millis():
+        try:
+            return int(
+                environ.get(
+                    OTEL_BSP_EXPORT_TIMEOUT, _DEFAULT_EXPORT_TIMEOUT_MILLIS
+                )
+            )
+        except ValueError:
+            logger.exception(
+                _ENV_VAR_INT_VALUE_ERROR_MESSAGE,
+                OTEL_BSP_EXPORT_TIMEOUT,
+                _DEFAULT_EXPORT_TIMEOUT_MILLIS,
+            )
+            return _DEFAULT_EXPORT_TIMEOUT_MILLIS
+
+    @staticmethod
+    def _validate_arguments(
+        max_queue_size, schedule_delay_millis, max_export_batch_size
+    ):
+        if max_queue_size <= 0:
+            raise ValueError("max_queue_size must be a positive integer.")
+
+        if schedule_delay_millis <= 0:
+            raise ValueError("schedule_delay_millis must be positive.")
+
+        if max_export_batch_size <= 0:
+            raise ValueError(
+                "max_export_batch_size must be a positive integer."
+            )
+
+        if max_export_batch_size > max_queue_size:
+            raise ValueError(
+                "max_export_batch_size must be less than or equal to max_queue_size."
+            )
+
 
 class ConsoleSpanExporter(SpanExporter):
     """Implementation of :class:`SpanExporter` that prints spans to the
@@ -405,3 +522,6 @@ class ConsoleSpanExporter(SpanExporter):
             self.out.write(self.formatter(span))
         self.out.flush()
         return SpanExportResult.SUCCESS
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True

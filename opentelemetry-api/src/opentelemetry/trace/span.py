@@ -5,7 +5,7 @@ import types as python_types
 import typing
 from collections import OrderedDict
 
-from opentelemetry.trace.status import Status
+from opentelemetry.trace.status import Status, StatusCode
 from opentelemetry.util import types
 
 # The key MUST begin with a lowercase letter or a digit,
@@ -40,9 +40,7 @@ _VALUE_PATTERN = re.compile(_VALUE_FORMAT)
 
 _TRACECONTEXT_MAXIMUM_TRACESTATE_KEYS = 32
 _delimiter_pattern = re.compile(r"[ \t]*,[ \t]*")
-_member_pattern = re.compile(
-    "({})(=)({})[ \t]*".format(_KEY_FORMAT, _VALUE_FORMAT)
-)
+_member_pattern = re.compile(f"({_KEY_FORMAT})(=)({_VALUE_FORMAT})[ \t]*")
 _logger = logging.getLogger(__name__)
 
 
@@ -88,7 +86,10 @@ class Span(abc.ABC):
 
         Sets Attributes with the key and value passed as arguments dict.
 
-        Note: The behavior of `None` value attributes is undefined, and hence strongly discouraged.
+        Note: The behavior of `None` value attributes is undefined, and hence
+        strongly discouraged. It is also preferred to set attributes at span
+        creation, instead of calling this method later since samplers can only
+        consider information already present during span creation.
         """
 
     @abc.abstractmethod
@@ -97,7 +98,10 @@ class Span(abc.ABC):
 
         Sets a single Attribute with the key and value passed as arguments.
 
-        Note: The behavior of `None` value attributes is undefined, and hence strongly discouraged.
+        Note: The behavior of `None` value attributes is undefined, and hence
+        strongly discouraged. It is also preferred to set attributes at span
+        creation, instead of calling this method later since samplers can only
+        consider information already present during span creation.
         """
 
     @abc.abstractmethod
@@ -133,7 +137,11 @@ class Span(abc.ABC):
         """
 
     @abc.abstractmethod
-    def set_status(self, status: Status) -> None:
+    def set_status(
+        self,
+        status: typing.Union[Status, StatusCode],
+        description: typing.Optional[str] = None,
+    ) -> None:
         """Sets the Status of the Span. If used, this will override the default
         Span status.
         """
@@ -245,7 +253,7 @@ class TraceState(typing.Mapping[str, str]):
 
     def __repr__(self) -> str:
         pairs = [
-            "{key=%s, value=%s}" % (key, value)
+            f"{{key={key}, value={value}}}"
             for key, value in self._dict.items()
         ]
         return str(pairs)
@@ -354,9 +362,10 @@ class TraceState(typing.Mapping[str, str]):
             If the number of keys is beyond the maximum, all values
             will be discarded and an empty tracestate will be returned.
         """
-        pairs = OrderedDict()
+        pairs = OrderedDict()  # type: OrderedDict[str, str]
         for header in header_list:
-            for member in re.split(_delimiter_pattern, header):
+            members: typing.List[str] = re.split(_delimiter_pattern, header)
+            for member in members:
                 # empty members are valid, but no need to process further.
                 if not member:
                     continue
@@ -367,7 +376,8 @@ class TraceState(typing.Mapping[str, str]):
                         member,
                     )
                     return cls()
-                key, _eq, value = match.groups()
+                groups: typing.Tuple[str, ...] = match.groups()
+                key, _eq, value = groups
                 # duplicate keys are not legal in header
                 if key in pairs:
                     return cls()
@@ -389,7 +399,8 @@ class TraceState(typing.Mapping[str, str]):
 
 
 DEFAULT_TRACE_STATE = TraceState.get_default()
-_TRACE_ID_HEX_LENGTH = 2 ** 128 - 1
+_TRACE_ID_MAX_VALUE = 2**128 - 1
+_SPAN_ID_MAX_VALUE = 2**64 - 1
 
 
 class SpanContext(
@@ -422,9 +433,8 @@ class SpanContext(
             trace_state = DEFAULT_TRACE_STATE
 
         is_valid = (
-            trace_id != INVALID_TRACE_ID
-            and span_id != INVALID_SPAN_ID
-            and trace_id < _TRACE_ID_HEX_LENGTH
+            INVALID_TRACE_ID < trace_id <= _TRACE_ID_MAX_VALUE
+            and INVALID_SPAN_ID < span_id <= _SPAN_ID_MAX_VALUE
         )
 
         return tuple.__new__(
@@ -478,16 +488,7 @@ class SpanContext(
         )
 
     def __repr__(self) -> str:
-        return (
-            "{}(trace_id=0x{}, span_id=0x{}, trace_flags=0x{:02x}, trace_state={!r}, is_remote={})"
-        ).format(
-            type(self).__name__,
-            format_trace_id(self.trace_id),
-            format_span_id(self.span_id),
-            self.trace_flags,
-            self.trace_state,
-            self.is_remote,
-        )
+        return f"{type(self).__name__}(trace_id=0x{format_trace_id(self.trace_id)}, span_id=0x{format_span_id(self.span_id)}, trace_flags=0x{self.trace_flags:02x}, trace_state={self.trace_state!r}, is_remote={self.is_remote})"
 
 
 class NonRecordingSpan(Span):
@@ -527,7 +528,11 @@ class NonRecordingSpan(Span):
     def update_name(self, name: str) -> None:
         pass
 
-    def set_status(self, status: Status) -> None:
+    def set_status(
+        self,
+        status: typing.Union[Status, StatusCode],
+        description: typing.Optional[str] = None,
+    ) -> None:
         pass
 
     def record_exception(
@@ -540,7 +545,7 @@ class NonRecordingSpan(Span):
         pass
 
     def __repr__(self) -> str:
-        return "NonRecordingSpan({!r})".format(self._context)
+        return f"NonRecordingSpan({self._context!r})"
 
 
 INVALID_SPAN_ID = 0x0000000000000000

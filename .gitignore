@@ -24,9 +24,6 @@ lib64
 __pycache__
 venv*/
 .venv*/
-opentelemetry-python-contrib/
-# in case of symlink
-opentelemetry-python-contrib
 
 # Installer logs
 pip-log.txt
@@ -66,3 +63,6 @@ target
 # Django example
 
 docs/examples/django/db.sqlite3
+
+# Semantic conventions
+scripts/semconv/semantic-conventions

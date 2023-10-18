@@ -12,13 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import multiprocessing
 import os
 import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from logging import WARNING
+from platform import python_implementation, system
 from unittest import mock
+
+from pytest import mark
 
 from opentelemetry import trace as trace_api
 from opentelemetry.context import Context
@@ -30,6 +34,11 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_BSP_SCHEDULE_DELAY,
 )
 from opentelemetry.sdk.trace import export
+from opentelemetry.sdk.trace.export import logger
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+    InMemorySpanExporter,
+)
+from opentelemetry.test.concurrency_test import ConcurrencyTestBase
 
 
 class MySpanExporter(export.SpanExporter):
@@ -157,7 +166,7 @@ def _create_start_and_end_span(name, span_processor):
     span.end()
 
 
-class TestBatchSpanProcessor(unittest.TestCase):
+class TestBatchSpanProcessor(ConcurrencyTestBase):
     @mock.patch.dict(
         "os.environ",
         {
@@ -167,7 +176,7 @@ class TestBatchSpanProcessor(unittest.TestCase):
             OTEL_BSP_EXPORT_TIMEOUT: "4",
         },
     )
-    def test_batch_span_processor_environment_variables(self):
+    def test_args_env_var(self):
 
         batch_span_processor = export.BatchSpanProcessor(
             MySpanExporter(destination=[])
@@ -177,6 +186,39 @@ class TestBatchSpanProcessor(unittest.TestCase):
         self.assertEqual(batch_span_processor.schedule_delay_millis, 2)
         self.assertEqual(batch_span_processor.max_export_batch_size, 3)
         self.assertEqual(batch_span_processor.export_timeout_millis, 4)
+
+    def test_args_env_var_defaults(self):
+
+        batch_span_processor = export.BatchSpanProcessor(
+            MySpanExporter(destination=[])
+        )
+
+        self.assertEqual(batch_span_processor.max_queue_size, 2048)
+        self.assertEqual(batch_span_processor.schedule_delay_millis, 5000)
+        self.assertEqual(batch_span_processor.max_export_batch_size, 512)
+        self.assertEqual(batch_span_processor.export_timeout_millis, 30000)
+
+    @mock.patch.dict(
+        "os.environ",
+        {
+            OTEL_BSP_MAX_QUEUE_SIZE: "a",
+            OTEL_BSP_SCHEDULE_DELAY: " ",
+            OTEL_BSP_MAX_EXPORT_BATCH_SIZE: "One",
+            OTEL_BSP_EXPORT_TIMEOUT: "@",
+        },
+    )
+    def test_args_env_var_value_error(self):
+
+        logger.disabled = True
+        batch_span_processor = export.BatchSpanProcessor(
+            MySpanExporter(destination=[])
+        )
+        logger.disabled = False
+
+        self.assertEqual(batch_span_processor.max_queue_size, 2048)
+        self.assertEqual(batch_span_processor.schedule_delay_millis, 5000)
+        self.assertEqual(batch_span_processor.max_export_batch_size, 512)
+        self.assertEqual(batch_span_processor.export_timeout_millis, 30000)
 
     def test_on_start_accepts_parent_context(self):
         # pylint: disable=no-self-use
@@ -259,7 +301,7 @@ class TestBatchSpanProcessor(unittest.TestCase):
         def create_spans_and_flush(tno: int):
             for span_idx in range(num_spans):
                 _create_start_and_end_span(
-                    "Span {}-{}".format(tno, span_idx), span_processor
+                    f"Span {tno}-{span_idx}", span_processor
                 )
             self.assertTrue(span_processor.force_flush())
 
@@ -356,6 +398,60 @@ class TestBatchSpanProcessor(unittest.TestCase):
         self.assertEqual(len(spans_names_list), 0)
         span_processor.shutdown()
 
+    def _check_fork_trace(self, exporter, expected):
+        time.sleep(0.5)  # give some time for the exporter to upload spans
+        spans = exporter.get_finished_spans()
+        for span in spans:
+            self.assertIn(span.name, expected)
+
+    @unittest.skipUnless(
+        hasattr(os, "fork"),
+        "needs *nix",
+    )
+    def test_batch_span_processor_fork(self):
+        # pylint: disable=invalid-name
+        tracer_provider = trace.TracerProvider()
+        tracer = tracer_provider.get_tracer(__name__)
+
+        exporter = InMemorySpanExporter()
+        span_processor = export.BatchSpanProcessor(
+            exporter,
+            max_queue_size=256,
+            max_export_batch_size=64,
+            schedule_delay_millis=10,
+        )
+        tracer_provider.add_span_processor(span_processor)
+        with tracer.start_as_current_span("foo"):
+            pass
+        time.sleep(0.5)  # give some time for the exporter to upload spans
+
+        self.assertTrue(span_processor.force_flush())
+        self.assertEqual(len(exporter.get_finished_spans()), 1)
+        exporter.clear()
+
+        def child(conn):
+            def _target():
+                with tracer.start_as_current_span("span") as s:
+                    s.set_attribute("i", "1")
+                    with tracer.start_as_current_span("temp"):
+                        pass
+
+            self.run_with_many_threads(_target, 100)
+
+            time.sleep(0.5)
+
+            spans = exporter.get_finished_spans()
+            conn.send(len(spans) == 200)
+            conn.close()
+
+        parent_conn, child_conn = multiprocessing.Pipe()
+        p = multiprocessing.Process(target=child, args=(child_conn,))
+        p.start()
+        self.assertTrue(parent_conn.recv())
+        p.join()
+
+        span_processor.shutdown()
+
     def test_batch_span_processor_scheduled_delay(self):
         """Test that spans are exported each schedule_delay_millis"""
         spans_names_list = []
@@ -364,22 +460,26 @@ class TestBatchSpanProcessor(unittest.TestCase):
         my_exporter = MySpanExporter(
             destination=spans_names_list, export_event=export_event
         )
+        start_time = time.time()
         span_processor = export.BatchSpanProcessor(
             my_exporter,
-            schedule_delay_millis=50,
+            schedule_delay_millis=500,
         )
 
         # create single span
-        start_time = time.time()
         _create_start_and_end_span("foo", span_processor)
 
         self.assertTrue(export_event.wait(2))
         export_time = time.time()
         self.assertEqual(len(spans_names_list), 1)
-        self.assertGreaterEqual((export_time - start_time) * 1e3, 50)
+        self.assertGreaterEqual((export_time - start_time) * 1e3, 500)
 
         span_processor.shutdown()
 
+    @mark.skipif(
+        python_implementation() == "PyPy" and system() == "Windows",
+        reason="This test randomly fails in Windows with PyPy",
+    )
     def test_batch_span_processor_reset_timeout(self):
         """Test that the scheduled timeout is reset on cycles without spans"""
         spans_names_list = []

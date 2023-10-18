@@ -15,7 +15,7 @@
 import re
 import typing
 
-import opentelemetry.trace as trace
+from opentelemetry import trace
 from opentelemetry.context.context import Context
 from opentelemetry.propagators import textmap
 from opentelemetry.trace import format_span_id, format_trace_id
@@ -37,7 +37,7 @@ class TraceContextTextMapPropagator(textmap.TextMapPropagator):
         self,
         carrier: textmap.CarrierT,
         context: typing.Optional[Context] = None,
-        getter: textmap.Getter = textmap.default_getter,
+        getter: textmap.Getter[textmap.CarrierT] = textmap.default_getter,
     ) -> Context:
         """Extracts SpanContext from the carrier.
 
@@ -55,16 +55,16 @@ class TraceContextTextMapPropagator(textmap.TextMapPropagator):
         if not match:
             return context
 
-        version = match.group(1)
-        trace_id = match.group(2)
-        span_id = match.group(3)
-        trace_flags = match.group(4)
+        version: str = match.group(1)
+        trace_id: str = match.group(2)
+        span_id: str = match.group(3)
+        trace_flags: str = match.group(4)
 
         if trace_id == "0" * 32 or span_id == "0" * 16:
             return context
 
         if version == "00":
-            if match.group(5):
+            if match.group(5):  # type: ignore
                 return context
         if version == "ff":
             return context
@@ -79,7 +79,7 @@ class TraceContextTextMapPropagator(textmap.TextMapPropagator):
             trace_id=int(trace_id, 16),
             span_id=int(span_id, 16),
             is_remote=True,
-            trace_flags=trace.TraceFlags(trace_flags),
+            trace_flags=trace.TraceFlags(int(trace_flags, 16)),
             trace_state=tracestate,
         )
         return trace.set_span_in_context(
@@ -90,7 +90,7 @@ class TraceContextTextMapPropagator(textmap.TextMapPropagator):
         self,
         carrier: textmap.CarrierT,
         context: typing.Optional[Context] = None,
-        setter: textmap.Setter = textmap.default_setter,
+        setter: textmap.Setter[textmap.CarrierT] = textmap.default_setter,
     ) -> None:
         """Injects SpanContext into the carrier.
 
@@ -100,11 +100,7 @@ class TraceContextTextMapPropagator(textmap.TextMapPropagator):
         span_context = span.get_span_context()
         if span_context == trace.INVALID_SPAN_CONTEXT:
             return
-        traceparent_string = "00-{trace_id}-{span_id}-{:02x}".format(
-            span_context.trace_flags,
-            trace_id=format_trace_id(span_context.trace_id),
-            span_id=format_span_id(span_context.span_id),
-        )
+        traceparent_string = f"00-{format_trace_id(span_context.trace_id)}-{format_span_id(span_context.span_id)}-{span_context.trace_flags:02x}"
         setter.set(carrier, self._TRACEPARENT_HEADER_NAME, traceparent_string)
         if span_context.trace_state:
             tracestate_string = span_context.trace_state.to_header()

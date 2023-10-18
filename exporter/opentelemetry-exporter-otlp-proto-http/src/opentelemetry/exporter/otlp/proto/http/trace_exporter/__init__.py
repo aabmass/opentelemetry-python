@@ -21,8 +21,13 @@ from typing import Dict, Optional
 from time import sleep
 
 import requests
-from backoff import expo
 
+from opentelemetry.exporter.otlp.proto.common._internal import (
+    _create_exp_backoff_generator,
+)
+from opentelemetry.exporter.otlp.proto.common.trace_encoder import (
+    encode_spans,
+)
 from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE,
     OTEL_EXPORTER_OTLP_TRACES_COMPRESSION,
@@ -36,17 +41,19 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_TIMEOUT,
 )
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
-from opentelemetry.exporter.otlp.proto.http import Compression
-from opentelemetry.exporter.otlp.proto.http.trace_exporter.encoder import (
-    _ProtobufEncoder,
+from opentelemetry.exporter.otlp.proto.http import (
+    _OTLP_HTTP_HEADERS,
+    Compression,
 )
+from opentelemetry.util.re import parse_env_headers
 
 
 _logger = logging.getLogger(__name__)
 
 
 DEFAULT_COMPRESSION = Compression.NoCompression
-DEFAULT_ENDPOINT = "http://localhost:55681/v1/traces"
+DEFAULT_ENDPOINT = "http://localhost:4318/"
+DEFAULT_TRACES_EXPORT_PATH = "v1/traces"
 DEFAULT_TIMEOUT = 10  # in seconds
 
 
@@ -61,16 +68,23 @@ class OTLPSpanExporter(SpanExporter):
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[int] = None,
         compression: Optional[Compression] = None,
+        session: Optional[requests.Session] = None,
     ):
         self._endpoint = endpoint or environ.get(
             OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
-            environ.get(OTEL_EXPORTER_OTLP_ENDPOINT, DEFAULT_ENDPOINT),
+            _append_trace_path(
+                environ.get(OTEL_EXPORTER_OTLP_ENDPOINT, DEFAULT_ENDPOINT)
+            ),
         )
         self._certificate_file = certificate_file or environ.get(
             OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE,
             environ.get(OTEL_EXPORTER_OTLP_CERTIFICATE, True),
         )
-        self._headers = headers or _headers_from_env()
+        headers_string = environ.get(
+            OTEL_EXPORTER_OTLP_TRACES_HEADERS,
+            environ.get(OTEL_EXPORTER_OTLP_HEADERS, ""),
+        )
+        self._headers = headers or parse_env_headers(headers_string)
         self._timeout = timeout or int(
             environ.get(
                 OTEL_EXPORTER_OTLP_TRACES_TIMEOUT,
@@ -78,11 +92,9 @@ class OTLPSpanExporter(SpanExporter):
             )
         )
         self._compression = compression or _compression_from_env()
-        self._session = requests.Session()
+        self._session = session or requests.Session()
         self._session.headers.update(self._headers)
-        self._session.headers.update(
-            {"Content-Type": _ProtobufEncoder._CONTENT_TYPE}
-        )
+        self._session.headers.update(_OTLP_HTTP_HEADERS)
         if self._compression is not Compression.NoCompression:
             self._session.headers.update(
                 {"Content-Encoding": self._compression.value}
@@ -121,9 +133,11 @@ class OTLPSpanExporter(SpanExporter):
             _logger.warning("Exporter already shutdown, ignoring batch")
             return SpanExportResult.FAILURE
 
-        serialized_data = _ProtobufEncoder.serialize(spans)
+        serialized_data = encode_spans(spans).SerializeToString()
 
-        for delay in expo(max_value=self._MAX_RETRY_TIMEOUT):
+        for delay in _create_exp_backoff_generator(
+            max_value=self._MAX_RETRY_TIMEOUT
+        ):
 
             if delay == self._MAX_RETRY_TIMEOUT:
                 return SpanExportResult.FAILURE
@@ -133,13 +147,15 @@ class OTLPSpanExporter(SpanExporter):
             if resp.status_code in (200, 202):
                 return SpanExportResult.SUCCESS
             elif self._retryable(resp):
-                _logger.debug(
-                    "Waiting %ss before retrying export of span", delay
+                _logger.warning(
+                    "Transient error %s encountered while exporting span batch, retrying in %ss.",
+                    resp.reason,
+                    delay,
                 )
                 sleep(delay)
                 continue
             else:
-                _logger.warning(
+                _logger.error(
                     "Failed to export batch code: %s, reason: %s",
                     resp.status_code,
                     resp.text,
@@ -154,23 +170,9 @@ class OTLPSpanExporter(SpanExporter):
         self._session.close()
         self._shutdown = True
 
-
-def _headers_from_env() -> Optional[Dict[str, str]]:
-    headers_str = environ.get(
-        OTEL_EXPORTER_OTLP_TRACES_HEADERS,
-        environ.get(OTEL_EXPORTER_OTLP_HEADERS),
-    )
-    headers = {}
-    if headers_str:
-        for header in headers_str.split(","):
-            try:
-                header_name, header_value = header.split("=")
-                headers[header_name.strip()] = header_value.strip()
-            except ValueError:
-                _logger.warning(
-                    "Skipped invalid OTLP exporter header: %r", header
-                )
-    return headers
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        """Nothing is buffered in this exporter, so this method does nothing."""
+        return True
 
 
 def _compression_from_env() -> Compression:
@@ -183,3 +185,9 @@ def _compression_from_env() -> Compression:
         .strip()
     )
     return Compression(compression)
+
+
+def _append_trace_path(endpoint: str) -> str:
+    if endpoint.endswith("/"):
+        return endpoint + DEFAULT_TRACES_EXPORT_PATH
+    return endpoint + f"/{DEFAULT_TRACES_EXPORT_PATH}"

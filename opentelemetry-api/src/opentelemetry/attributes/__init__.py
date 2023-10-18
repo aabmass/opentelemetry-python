@@ -59,13 +59,9 @@ def _clean_attribute(
         cleaned_seq = []
 
         for element in value:
-            # None is considered valid in any sequence
+            element = _clean_attribute_value(element, max_len)
             if element is None:
                 cleaned_seq.append(element)
-
-            element = _clean_attribute_value(element, max_len)
-            # reject invalid elements
-            if element is None:
                 continue
 
             element_type = type(element)
@@ -89,7 +85,8 @@ def _clean_attribute(
             # use equality instead of isinstance as isinstance(True, int) evaluates to True
             elif element_type != sequence_first_valid_type:
                 _logger.warning(
-                    "Mixed types %s and %s in attribute value sequence",
+                    "Attribute %r mixes types %s and %s in attribute value sequence",
+                    key,
                     sequence_first_valid_type.__name__,
                     type(element).__name__,
                 )
@@ -101,9 +98,10 @@ def _clean_attribute(
         return tuple(cleaned_seq)
 
     _logger.warning(
-        "Invalid type %s for attribute value. Expected one of %s or a "
+        "Invalid type %s for attribute '%s' value. Expected one of %s or a "
         "sequence of those types",
         type(value).__name__,
+        key,
         [valid_type.__name__ for valid_type in _VALID_ATTR_VALUE_TYPES],
     )
     return None
@@ -157,8 +155,8 @@ class BoundedAttributes(MutableMapping):
         self._immutable = immutable
 
     def __repr__(self):
-        return "{}({}, maxlen={})".format(
-            type(self).__name__, dict(self._dict), self.maxlen
+        return (
+            f"{type(self).__name__}({dict(self._dict)}, maxlen={self.maxlen})"
         )
 
     def __getitem__(self, key):
@@ -172,14 +170,16 @@ class BoundedAttributes(MutableMapping):
                 self.dropped += 1
                 return
 
-            if key in self._dict:
-                del self._dict[key]
-            elif self.maxlen is not None and len(self._dict) == self.maxlen:
-                del self._dict[next(iter(self._dict.keys()))]
-                self.dropped += 1
-
             value = _clean_attribute(key, value, self.max_value_len)
             if value is not None:
+                if key in self._dict:
+                    del self._dict[key]
+                elif (
+                    self.maxlen is not None and len(self._dict) == self.maxlen
+                ):
+                    self._dict.popitem(last=False)
+                    self.dropped += 1
+
                 self._dict[key] = value
 
     def __delitem__(self, key):

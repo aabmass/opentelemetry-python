@@ -13,20 +13,26 @@
 # limitations under the License.
 
 # pylint: disable=too-many-lines
+
 import shutil
 import subprocess
 import unittest
 from importlib import reload
 from logging import ERROR, WARNING
 from random import randint
+from time import time_ns
 from typing import Optional
 from unittest import mock
+from unittest.mock import Mock, patch
 
 from opentelemetry import trace as trace_api
 from opentelemetry.context import Context
 from opentelemetry.sdk import resources, trace
 from opentelemetry.sdk.environment_variables import (
+    OTEL_ATTRIBUTE_COUNT_LIMIT,
     OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT,
+    OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT,
+    OTEL_LINK_ATTRIBUTE_COUNT_LIMIT,
     OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT,
     OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT,
     OTEL_SPAN_EVENT_COUNT_LIMIT,
@@ -34,19 +40,41 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_TRACES_SAMPLER,
     OTEL_TRACES_SAMPLER_ARG,
 )
-from opentelemetry.sdk.trace import Resource, sampling
+from opentelemetry.sdk.trace import Resource, TracerProvider
 from opentelemetry.sdk.trace.id_generator import RandomIdGenerator
-from opentelemetry.sdk.util import ns_to_iso_str
+from opentelemetry.sdk.trace.sampling import (
+    ALWAYS_OFF,
+    ALWAYS_ON,
+    Decision,
+    ParentBased,
+    StaticSampler,
+)
+from opentelemetry.sdk.util import BoundedDict, ns_to_iso_str
 from opentelemetry.sdk.util.instrumentation import InstrumentationInfo
 from opentelemetry.test.spantestutil import (
     get_span_with_dropped_attributes_events_links,
     new_tracer,
 )
-from opentelemetry.trace import StatusCode
-from opentelemetry.util._time import _time_ns
+from opentelemetry.trace import (
+    Status,
+    StatusCode,
+    get_tracer,
+    set_tracer_provider,
+)
 
 
 class TestTracer(unittest.TestCase):
+    def test_no_deprecated_warning(self):
+        with self.assertRaises(AssertionError):
+            with self.assertWarns(DeprecationWarning):
+                TracerProvider(Mock(), Mock()).get_tracer(Mock(), Mock())
+
+        # This is being added here to make sure the filter on
+        # InstrumentationInfo does not affect other DeprecationWarnings that
+        # may be raised.
+        with self.assertWarns(DeprecationWarning):
+            BoundedDict(0)
+
     def test_extends_api(self):
         tracer = new_tracer()
         self.assertIsInstance(tracer, trace.Tracer)
@@ -115,7 +143,7 @@ tracer_provider.add_span_processor(mock_processor)
         self.assertTrue(out.startswith(b"1"))
 
         # test that shutdown is called only once even if Tracer.shutdown is
-        # called explicitely
+        # called explicitly
         out = run_general_code(True, True)
         self.assertTrue(out.startswith(b"1"))
 
@@ -161,12 +189,11 @@ class TestTracerSampling(unittest.TestCase):
 
     def test_default_sampler_type(self):
         tracer_provider = trace.TracerProvider()
-        self.assertIsInstance(tracer_provider.sampler, sampling.ParentBased)
-        # pylint: disable=protected-access
-        self.assertEqual(tracer_provider.sampler._root, sampling.ALWAYS_ON)
+        self.verify_default_sampler(tracer_provider)
 
-    def test_sampler_no_sampling(self):
-        tracer_provider = trace.TracerProvider(sampling.ALWAYS_OFF)
+    @mock.patch("opentelemetry.sdk.trace.sampling._get_from_env_or_default")
+    def test_sampler_no_sampling(self, _get_from_env_or_default):
+        tracer_provider = trace.TracerProvider(ALWAYS_OFF)
         tracer = tracer_provider.get_tracer(__name__)
 
         # Check that the default tracer creates no-op spans if the sampler
@@ -184,16 +211,15 @@ class TestTracerSampling(unittest.TestCase):
             child_span.get_span_context().trace_flags,
             trace_api.TraceFlags.DEFAULT,
         )
+        self.assertFalse(_get_from_env_or_default.called)
 
     @mock.patch.dict("os.environ", {OTEL_TRACES_SAMPLER: "always_off"})
     def test_sampler_with_env(self):
         # pylint: disable=protected-access
         reload(trace)
         tracer_provider = trace.TracerProvider()
-        self.assertIsInstance(tracer_provider.sampler, sampling.StaticSampler)
-        self.assertEqual(
-            tracer_provider.sampler._decision, sampling.Decision.DROP
-        )
+        self.assertIsInstance(tracer_provider.sampler, StaticSampler)
+        self.assertEqual(tracer_provider.sampler._decision, Decision.DROP)
 
         tracer = tracer_provider.get_tracer(__name__)
 
@@ -212,8 +238,13 @@ class TestTracerSampling(unittest.TestCase):
         # pylint: disable=protected-access
         reload(trace)
         tracer_provider = trace.TracerProvider()
-        self.assertIsInstance(tracer_provider.sampler, sampling.ParentBased)
+        self.assertIsInstance(tracer_provider.sampler, ParentBased)
         self.assertEqual(tracer_provider.sampler._root.rate, 0.25)
+
+    def verify_default_sampler(self, tracer_provider):
+        self.assertIsInstance(tracer_provider.sampler, ParentBased)
+        # pylint: disable=protected-access
+        self.assertEqual(tracer_provider.sampler._root, ALWAYS_ON)
 
 
 class TestSpanCreation(unittest.TestCase):
@@ -234,23 +265,32 @@ class TestSpanCreation(unittest.TestCase):
 
     def test_instrumentation_info(self):
         tracer_provider = trace.TracerProvider()
+        schema_url = "https://opentelemetry.io/schemas/1.3.0"
         tracer1 = tracer_provider.get_tracer("instr1")
-        tracer2 = tracer_provider.get_tracer("instr2", "1.3b3")
+        tracer2 = tracer_provider.get_tracer("instr2", "1.3b3", schema_url)
         span1 = tracer1.start_span("s1")
         span2 = tracer2.start_span("s2")
-        self.assertEqual(
-            span1.instrumentation_info, InstrumentationInfo("instr1", "")
-        )
-        self.assertEqual(
-            span2.instrumentation_info, InstrumentationInfo("instr2", "1.3b3")
-        )
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(
+                span1.instrumentation_info, InstrumentationInfo("instr1", "")
+            )
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(
+                span2.instrumentation_info,
+                InstrumentationInfo("instr2", "1.3b3", schema_url),
+            )
 
-        self.assertEqual(span2.instrumentation_info.version, "1.3b3")
-        self.assertEqual(span2.instrumentation_info.name, "instr2")
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(span2.instrumentation_info.schema_url, schema_url)
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(span2.instrumentation_info.version, "1.3b3")
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(span2.instrumentation_info.name, "instr2")
 
-        self.assertLess(
-            span1.instrumentation_info, span2.instrumentation_info
-        )  # Check sortability.
+        with self.assertWarns(DeprecationWarning):
+            self.assertLess(
+                span1.instrumentation_info, span2.instrumentation_info
+            )  # Check sortability.
 
     def test_invalid_instrumentation_info(self):
         tracer_provider = trace.TracerProvider()
@@ -264,6 +304,7 @@ class TestSpanCreation(unittest.TestCase):
         )
         span1 = tracer1.start_span("foo")
         self.assertTrue(span1.is_recording())
+        self.assertEqual(tracer1.instrumentation_info.schema_url, "")
         self.assertEqual(tracer1.instrumentation_info.version, "")
         self.assertEqual(tracer1.instrumentation_info.name, "")
 
@@ -272,6 +313,7 @@ class TestSpanCreation(unittest.TestCase):
         )
         span2 = tracer2.start_span("bar")
         self.assertTrue(span2.is_recording())
+        self.assertEqual(tracer2.instrumentation_info.schema_url, "")
         self.assertEqual(tracer2.instrumentation_info.version, "")
         self.assertEqual(tracer2.instrumentation_info.name, "")
 
@@ -552,13 +594,36 @@ class TestSpanCreation(unittest.TestCase):
 
     def test_surplus_span_attributes(self):
         # pylint: disable=protected-access
-        max_attrs = trace.SpanLimits().max_attributes
+        max_attrs = trace.SpanLimits().max_span_attributes
         attributes = {str(idx): idx for idx in range(0, 16 + max_attrs)}
         tracer = new_tracer()
         with tracer.start_as_current_span(
             "span", attributes=attributes
         ) as root:
             self.assertEqual(len(root.attributes), max_attrs)
+
+
+class TestReadableSpan(unittest.TestCase):
+    def test_links(self):
+        span = trace.ReadableSpan()
+        self.assertEqual(span.links, ())
+
+        span = trace.ReadableSpan(
+            links=[trace_api.Link(context=trace_api.INVALID_SPAN_CONTEXT)] * 2,
+        )
+        self.assertEqual(len(span.links), 2)
+        for link in span.links:
+            self.assertFalse(link.context.is_valid)
+
+    def test_events(self):
+        span = trace.ReadableSpan()
+        self.assertEqual(span.events, ())
+        events = [
+            trace.Event("foo1", {"bar1": "baz1"}),
+            trace.Event("foo2", {"bar2": "baz2"}),
+        ]
+        span = trace.ReadableSpan(events=events)
+        self.assertEqual(span.events, tuple(events))
 
 
 class TestSpan(unittest.TestCase):
@@ -575,12 +640,12 @@ class TestSpan(unittest.TestCase):
         with self.tracer.start_as_current_span("root") as root:
             root.set_attributes(
                 {
-                    "http.method": "GET",
-                    "http.url": "https://example.com:779/path/12/?q=d#123",
+                    "http.request.method": "GET",
+                    "url.full": "https://example.com:779/path/12/?q=d#123",
                 }
             )
 
-            root.set_attribute("http.status_code", 200)
+            root.set_attribute("http.response.status_code", 200)
             root.set_attribute("http.status_text", "OK")
             root.set_attribute("misc.pi", 3.14)
 
@@ -596,12 +661,12 @@ class TestSpan(unittest.TestCase):
             root.set_attribute("list-of-numerics", list_of_numerics)
 
             self.assertEqual(len(root.attributes), 9)
-            self.assertEqual(root.attributes["http.method"], "GET")
+            self.assertEqual(root.attributes["http.request.method"], "GET")
             self.assertEqual(
-                root.attributes["http.url"],
+                root.attributes["url.full"],
                 "https://example.com:779/path/12/?q=d#123",
             )
-            self.assertEqual(root.attributes["http.status_code"], 200)
+            self.assertEqual(root.attributes["http.response.status_code"], 200)
             self.assertEqual(root.attributes["http.status_text"], "OK")
             self.assertEqual(root.attributes["misc.pi"], 3.14)
             self.assertEqual(root.attributes["attr-key"], "attr-value2")
@@ -636,26 +701,34 @@ class TestSpan(unittest.TestCase):
 
     def test_invalid_attribute_values(self):
         with self.tracer.start_as_current_span("root") as root:
-            root.set_attributes(
-                {"correct-value": "foo", "non-primitive-data-type": dict()}
-            )
+            with self.assertLogs(level=WARNING):
+                root.set_attributes(
+                    {"correct-value": "foo", "non-primitive-data-type": {}}
+                )
 
-            root.set_attribute("non-primitive-data-type", dict())
-            root.set_attribute(
-                "list-of-mixed-data-types-numeric-first",
-                [123, False, "string"],
-            )
-            root.set_attribute(
-                "list-of-mixed-data-types-non-numeric-first",
-                [False, 123, "string"],
-            )
-            root.set_attribute(
-                "list-with-non-primitive-data-type", [dict(), 123]
-            )
-            root.set_attribute("list-with-numeric-and-bool", [1, True])
+            with self.assertLogs(level=WARNING):
+                root.set_attribute("non-primitive-data-type", {})
+            with self.assertLogs(level=WARNING):
+                root.set_attribute(
+                    "list-of-mixed-data-types-numeric-first",
+                    [123, False, "string"],
+                )
+            with self.assertLogs(level=WARNING):
+                root.set_attribute(
+                    "list-of-mixed-data-types-non-numeric-first",
+                    [False, 123, "string"],
+                )
+            with self.assertLogs(level=WARNING):
+                root.set_attribute(
+                    "list-with-non-primitive-data-type", [{}, 123]
+                )
+            with self.assertLogs(level=WARNING):
+                root.set_attribute("list-with-numeric-and-bool", [1, True])
 
-            root.set_attribute("", 123)
-            root.set_attribute(None, 123)
+            with self.assertLogs(level=WARNING):
+                root.set_attribute("", 123)
+            with self.assertLogs(level=WARNING):
+                root.set_attribute(None, 123)
 
             self.assertEqual(len(root.attributes), 1)
             self.assertEqual(root.attributes["correct-value"], "foo")
@@ -682,7 +755,7 @@ class TestSpan(unittest.TestCase):
             "attr-in-both": "decision-attr",
         }
         tracer_provider = trace.TracerProvider(
-            sampling.StaticSampler(sampling.Decision.RECORD_AND_SAMPLE)
+            StaticSampler(Decision.RECORD_AND_SAMPLE)
         )
 
         self.tracer = tracer_provider.get_tracer(__name__)
@@ -711,7 +784,7 @@ class TestSpan(unittest.TestCase):
             )
 
             # event name, attributes and timestamp
-            now = _time_ns()
+            now = time_ns()
             root.add_event("event2", {"name": ["birthday"]}, now)
 
             mutable_list = ["original_contents"]
@@ -771,10 +844,16 @@ class TestSpan(unittest.TestCase):
         self.assertEqual(trace_api.get_current_span(), trace_api.INVALID_SPAN)
 
         with self.tracer.start_as_current_span("root") as root:
-            root.add_event("event0", {"attr1": True, "attr2": ["hi", False]})
-            root.add_event("event0", {"attr1": dict()})
-            root.add_event("event0", {"attr1": [[True]]})
-            root.add_event("event0", {"attr1": [dict()], "attr2": [1, 2]})
+            with self.assertLogs(level=WARNING):
+                root.add_event(
+                    "event0", {"attr1": True, "attr2": ["hi", False]}
+                )
+            with self.assertLogs(level=WARNING):
+                root.add_event("event0", {"attr1": {}})
+            with self.assertLogs(level=WARNING):
+                root.add_event("event0", {"attr1": [[True]]})
+            with self.assertLogs(level=WARNING):
+                root.add_event("event0", {"attr1": [{}], "attr2": [1, 2]})
 
             self.assertEqual(len(root.events), 4)
             self.assertEqual(root.events[0].attributes, {"attr1": True})
@@ -874,6 +953,39 @@ class TestSpan(unittest.TestCase):
         span.end(end_time)
         self.assertEqual(end_time, span.end_time)
 
+    def test_span_set_status(self):
+
+        span1 = self.tracer.start_span("span1")
+        span1.set_status(Status(status_code=StatusCode.ERROR))
+        self.assertEqual(span1.status.status_code, StatusCode.ERROR)
+        self.assertEqual(span1.status.description, None)
+
+        span2 = self.tracer.start_span("span2")
+        span2.set_status(
+            Status(status_code=StatusCode.ERROR, description="desc")
+        )
+        self.assertEqual(span2.status.status_code, StatusCode.ERROR)
+        self.assertEqual(span2.status.description, "desc")
+
+        span3 = self.tracer.start_span("span3")
+        span3.set_status(StatusCode.ERROR)
+        self.assertEqual(span3.status.status_code, StatusCode.ERROR)
+        self.assertEqual(span3.status.description, None)
+
+        span4 = self.tracer.start_span("span4")
+        span4.set_status(StatusCode.ERROR, "span4 desc")
+        self.assertEqual(span4.status.status_code, StatusCode.ERROR)
+        self.assertEqual(span4.status.description, "span4 desc")
+
+        span5 = self.tracer.start_span("span5")
+        with self.assertLogs(level=WARNING):
+            span5.set_status(
+                Status(status_code=StatusCode.ERROR, description="desc"),
+                description="ignored",
+            )
+        self.assertEqual(span5.status.status_code, StatusCode.ERROR)
+        self.assertEqual(span5.status.description, "desc")
+
     def test_ended_span(self):
         """Events, attributes are not allowed after span is ended"""
 
@@ -895,7 +1007,7 @@ class TestSpan(unittest.TestCase):
         self.assertEqual(end_time0, root.end_time)
 
         with self.assertLogs(level=WARNING):
-            root.set_attribute("http.method", "GET")
+            root.set_attribute("http.request.method", "GET")
         self.assertEqual(len(root.attributes), 0)
 
         with self.assertLogs(level=WARNING):
@@ -962,14 +1074,16 @@ class TestSpan(unittest.TestCase):
                 root.status.description, "AssertionError: unknown"
             )
 
-        unset_status_test(
-            trace.TracerProvider().get_tracer(__name__).start_span("root")
-        )
-        unset_status_test(
-            trace.TracerProvider()
-            .get_tracer(__name__)
-            .start_as_current_span("root")
-        )
+        with self.assertLogs(level=WARNING):
+            unset_status_test(
+                trace.TracerProvider().get_tracer(__name__).start_span("root")
+            )
+        with self.assertLogs(level=WARNING):
+            unset_status_test(
+                trace.TracerProvider()
+                .get_tracer(__name__)
+                .start_as_current_span("root")
+            )
 
     def test_last_status_wins(self):
         def error_status_test(context):
@@ -1284,12 +1398,15 @@ class TestSpanProcessor(unittest.TestCase):
     "attributes": {},
     "events": [],
     "links": [],
-    "resource": {}
+    "resource": {
+        "attributes": {},
+        "schema_url": ""
+    }
 }""",
         )
         self.assertEqual(
             span.to_json(indent=None),
-            '{"name": "span-name", "context": {"trace_id": "0x000000000000000000000000deadbeef", "span_id": "0x00000000deadbef0", "trace_state": "[]"}, "kind": "SpanKind.INTERNAL", "parent_id": "0x00000000deadbef0", "start_time": null, "end_time": null, "status": {"status_code": "UNSET"}, "attributes": {}, "events": [], "links": [], "resource": {}}',
+            '{"name": "span-name", "context": {"trace_id": "0x000000000000000000000000deadbeef", "span_id": "0x00000000deadbef0", "trace_state": "[]"}, "kind": "SpanKind.INTERNAL", "parent_id": "0x00000000deadbef0", "start_time": null, "end_time": null, "status": {"status_code": "UNSET"}, "attributes": {}, "events": [], "links": [], "resource": {"attributes": {}, "schema_url": ""}}',
         )
 
     def test_attributes_to_json(self):
@@ -1307,7 +1424,7 @@ class TestSpanProcessor(unittest.TestCase):
             span.to_json(indent=None),
             '{"name": "span-name", "context": {"trace_id": "0x000000000000000000000000deadbeef", "span_id": "0x00000000deadbef0", "trace_state": "[]"}, "kind": "SpanKind.INTERNAL", "parent_id": null, "start_time": null, "end_time": null, "status": {"status_code": "UNSET"}, "attributes": {"key": "value"}, "events": [{"name": "event", "timestamp": "'
             + date_str
-            + '", "attributes": {"key2": "value2"}}], "links": [], "resource": {}}',
+            + '", "attributes": {"key2": "value2"}}], "links": [], "resource": {"attributes": {}, "schema_url": ""}}',
         )
 
 
@@ -1327,7 +1444,19 @@ class TestSpanLimits(unittest.TestCase):
         limits = trace.SpanLimits()
         self.assertEqual(
             limits.max_attributes,
+            trace._DEFAULT_OTEL_ATTRIBUTE_COUNT_LIMIT,
+        )
+        self.assertEqual(
+            limits.max_span_attributes,
             trace._DEFAULT_OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT,
+        )
+        self.assertEqual(
+            limits.max_event_attributes,
+            trace._DEFAULT_OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT,
+        )
+        self.assertEqual(
+            limits.max_link_attributes,
+            trace._DEFAULT_OTEL_LINK_ATTRIBUTE_COUNT_LIMIT,
         )
         self.assertEqual(
             limits.max_events, trace._DEFAULT_OTEL_SPAN_EVENT_COUNT_LIMIT
@@ -1357,25 +1486,61 @@ class TestSpanLimits(unittest.TestCase):
         self.assertEqual(limits.max_span_attribute_length, 33)
 
     def test_limits_values_code(self):
-        max_attributes, max_events, max_links, max_attr_length = (
+        (
+            max_attributes,
+            max_span_attributes,
+            max_link_attributes,
+            max_event_attributes,
+            max_events,
+            max_links,
+            max_attr_length,
+            max_span_attr_length,
+        ) = (
+            randint(0, 10000),
+            randint(0, 10000),
+            randint(0, 10000),
+            randint(0, 10000),
             randint(0, 10000),
             randint(0, 10000),
             randint(0, 10000),
             randint(0, 10000),
         )
         limits = trace.SpanLimits(
-            max_attributes=max_attributes,
             max_events=max_events,
             max_links=max_links,
+            max_attributes=max_attributes,
+            max_span_attributes=max_span_attributes,
+            max_event_attributes=max_event_attributes,
+            max_link_attributes=max_link_attributes,
             max_attribute_length=max_attr_length,
+            max_span_attribute_length=max_span_attr_length,
         )
-        self.assertEqual(limits.max_attributes, max_attributes)
         self.assertEqual(limits.max_events, max_events)
         self.assertEqual(limits.max_links, max_links)
+        self.assertEqual(limits.max_attributes, max_attributes)
+        self.assertEqual(limits.max_span_attributes, max_span_attributes)
+        self.assertEqual(limits.max_event_attributes, max_event_attributes)
+        self.assertEqual(limits.max_link_attributes, max_link_attributes)
         self.assertEqual(limits.max_attribute_length, max_attr_length)
+        self.assertEqual(
+            limits.max_span_attribute_length, max_span_attr_length
+        )
 
     def test_limits_values_env(self):
-        max_attributes, max_events, max_links, max_attr_length = (
+        (
+            max_attributes,
+            max_span_attributes,
+            max_link_attributes,
+            max_event_attributes,
+            max_events,
+            max_links,
+            max_attr_length,
+            max_span_attr_length,
+        ) = (
+            randint(0, 10000),
+            randint(0, 10000),
+            randint(0, 10000),
+            randint(0, 10000),
             randint(0, 10000),
             randint(0, 10000),
             randint(0, 10000),
@@ -1384,16 +1549,29 @@ class TestSpanLimits(unittest.TestCase):
         with mock.patch.dict(
             "os.environ",
             {
-                OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT: str(max_attributes),
+                OTEL_ATTRIBUTE_COUNT_LIMIT: str(max_attributes),
+                OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT: str(max_span_attributes),
+                OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT: str(max_event_attributes),
+                OTEL_LINK_ATTRIBUTE_COUNT_LIMIT: str(max_link_attributes),
                 OTEL_SPAN_EVENT_COUNT_LIMIT: str(max_events),
                 OTEL_SPAN_LINK_COUNT_LIMIT: str(max_links),
-                OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT: str(max_attr_length),
+                OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: str(max_attr_length),
+                OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT: str(
+                    max_span_attr_length
+                ),
             },
         ):
             limits = trace.SpanLimits()
-            self.assertEqual(limits.max_attributes, max_attributes)
             self.assertEqual(limits.max_events, max_events)
             self.assertEqual(limits.max_links, max_links)
+            self.assertEqual(limits.max_attributes, max_attributes)
+            self.assertEqual(limits.max_span_attributes, max_span_attributes)
+            self.assertEqual(limits.max_event_attributes, max_event_attributes)
+            self.assertEqual(limits.max_link_attributes, max_link_attributes)
+            self.assertEqual(limits.max_attribute_length, max_attr_length)
+            self.assertEqual(
+                limits.max_span_attribute_length, max_span_attr_length
+            )
 
     @mock.patch.dict(
         "os.environ",
@@ -1413,6 +1591,25 @@ class TestSpanLimits(unittest.TestCase):
             max_links=4,
             max_attr_len=11,
             max_span_attr_len=15,
+        )
+
+    @mock.patch.dict(
+        "os.environ",
+        {
+            OTEL_ATTRIBUTE_COUNT_LIMIT: "13",
+            OTEL_SPAN_EVENT_COUNT_LIMIT: "7",
+            OTEL_SPAN_LINK_COUNT_LIMIT: "4",
+            OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT: "11",
+        },
+    )
+    def test_span_limits_global_env(self):
+        self._test_span_limits(
+            new_tracer(),
+            max_attrs=13,
+            max_events=7,
+            max_links=4,
+            max_attr_len=11,
+            max_span_attr_len=11,
         )
 
     @mock.patch.dict(
@@ -1477,7 +1674,54 @@ class TestSpanLimits(unittest.TestCase):
         self._test_span_no_limits(
             new_tracer(
                 span_limits=trace.SpanLimits(
-                    max_attributes=trace.SpanLimits.UNSET,
+                    max_span_attributes=trace.SpanLimits.UNSET,
+                    max_links=trace.SpanLimits.UNSET,
+                    max_events=trace.SpanLimits.UNSET,
+                    max_attribute_length=trace.SpanLimits.UNSET,
+                )
+            )
+        )
+
+    def test_span_zero_global_limit(self):
+        self._test_span_limits(
+            new_tracer(
+                span_limits=trace.SpanLimits(
+                    max_attributes=0,
+                    max_events=0,
+                    max_links=0,
+                )
+            ),
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+
+    def test_span_zero_global_nonzero_model(self):
+        self._test_span_limits(
+            new_tracer(
+                span_limits=trace.SpanLimits(
+                    max_attributes=0,
+                    max_events=0,
+                    max_links=0,
+                    max_span_attributes=15,
+                    max_span_attribute_length=25,
+                )
+            ),
+            15,
+            0,
+            0,
+            0,
+            25,
+        )
+
+    def test_span_zero_global_unset_model(self):
+        self._test_span_no_limits(
+            new_tracer(
+                span_limits=trace.SpanLimits(
+                    max_attributes=0,
+                    max_span_attributes=trace.SpanLimits.UNSET,
                     max_links=trace.SpanLimits.UNSET,
                     max_events=trace.SpanLimits.UNSET,
                     max_attribute_length=trace.SpanLimits.UNSET,
@@ -1492,7 +1736,6 @@ class TestSpanLimits(unittest.TestCase):
         self.assertEqual(3, span.dropped_events)
         self.assertEqual(2, span.events[0].attributes.dropped)
         self.assertEqual(2, span.links[0].attributes.dropped)
-        self.assertEqual(2, span.resource.attributes.dropped)
 
     def _test_span_limits(
         self,
@@ -1517,8 +1760,7 @@ class TestSpanLimits(unittest.TestCase):
         ]
 
         some_attrs = {
-            "init_attribute_{}".format(idx): self.long_val
-            for idx in range(100)
+            f"init_attribute_{idx}": self.long_val for idx in range(100)
         }
         with tracer.start_as_current_span(
             "root", links=some_links, attributes=some_attrs
@@ -1526,17 +1768,15 @@ class TestSpanLimits(unittest.TestCase):
             self.assertEqual(len(root.links), max_links)
             self.assertEqual(len(root.attributes), max_attrs)
             for idx in range(100):
+                root.set_attribute(f"my_str_attribute_{idx}", self.long_val)
                 root.set_attribute(
-                    "my_str_attribute_{}".format(idx), self.long_val
+                    f"my_byte_attribute_{idx}", self.long_val.encode()
                 )
                 root.set_attribute(
-                    "my_byte_attribute_{}".format(idx), self.long_val.encode()
-                )
-                root.set_attribute(
-                    "my_int_attribute_{}".format(idx), self.long_val.encode()
+                    f"my_int_attribute_{idx}", self.long_val.encode()
                 )
                 root.add_event(
-                    "my_event_{}".format(idx), attributes={"k": self.long_val}
+                    f"my_event_{idx}", attributes={"k": self.long_val}
                 )
 
             self.assertEqual(len(root.attributes), max_attrs)
@@ -1578,7 +1818,7 @@ class TestSpanLimits(unittest.TestCase):
         with tracer.start_as_current_span("root") as root:
             for idx in range(num_events):
                 root.add_event(
-                    "my_event_{}".format(idx), attributes={"k": self.long_val}
+                    f"my_event_{idx}", attributes={"k": self.long_val}
                 )
 
             self.assertEqual(len(root.events), num_events)
@@ -1588,10 +1828,133 @@ class TestSpanLimits(unittest.TestCase):
         ) + randint(1, 100)
         with tracer.start_as_current_span("root") as root:
             for idx in range(num_attributes):
-                root.set_attribute(
-                    "my_attribute_{}".format(idx), self.long_val
-                )
+                root.set_attribute(f"my_attribute_{idx}", self.long_val)
 
             self.assertEqual(len(root.attributes), num_attributes)
             for attr_val in root.attributes.values():
                 self.assertEqual(attr_val, self.long_val)
+
+
+class TestTraceFlags(unittest.TestCase):
+    def test_constant_default(self):
+        self.assertEqual(trace_api.TraceFlags.DEFAULT, 0)
+
+    def test_constant_sampled(self):
+        self.assertEqual(trace_api.TraceFlags.SAMPLED, 1)
+
+    def test_get_default(self):
+        self.assertEqual(
+            trace_api.TraceFlags.get_default(), trace_api.TraceFlags.DEFAULT
+        )
+
+    def test_sampled_true(self):
+        self.assertTrue(trace_api.TraceFlags(0xF1).sampled)
+
+    def test_sampled_false(self):
+        self.assertFalse(trace_api.TraceFlags(0xF0).sampled)
+
+    def test_constant_default_trace_options(self):
+        self.assertEqual(
+            trace_api.DEFAULT_TRACE_OPTIONS, trace_api.TraceFlags.DEFAULT
+        )
+
+
+class TestParentChildSpanException(unittest.TestCase):
+    def test_parent_child_span_exception(self):
+        """
+        Tests that a parent span has its status set to ERROR when a child span
+        raises an exception even when the child span has its
+        ``record_exception`` and ``set_status_on_exception`` attributes
+        set to ``False``.
+        """
+
+        set_tracer_provider(TracerProvider())
+        tracer = get_tracer(__name__)
+
+        exception = Exception("exception")
+
+        exception_type = exception.__class__.__name__
+        exception_message = exception.args[0]
+
+        try:
+            with tracer.start_as_current_span(
+                "parent",
+            ) as parent_span:
+                with tracer.start_as_current_span(
+                    "child",
+                    record_exception=False,
+                    set_status_on_exception=False,
+                ) as child_span:
+                    raise exception
+
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+        self.assertTrue(child_span.status.is_ok)
+        self.assertIsNone(child_span.status.description)
+        self.assertTupleEqual(child_span.events, ())
+
+        self.assertFalse(parent_span.status.is_ok)
+        self.assertEqual(
+            parent_span.status.description,
+            f"{exception_type}: {exception_message}",
+        )
+        self.assertEqual(
+            parent_span.events[0].attributes["exception.type"], exception_type
+        )
+        self.assertEqual(
+            parent_span.events[0].attributes["exception.message"],
+            exception_message,
+        )
+
+    def test_child_parent_span_exception(self):
+        """
+        Tests that a child span does not have its status set to ERROR when a
+        parent span raises an exception and the parent span has its
+        ``record_exception`` and ``set_status_on_exception`` attributes
+        set to ``False``.
+        """
+
+        set_tracer_provider(TracerProvider())
+        tracer = get_tracer(__name__)
+
+        exception = Exception("exception")
+
+        try:
+            with tracer.start_as_current_span(
+                "parent",
+                record_exception=False,
+                set_status_on_exception=False,
+            ) as parent_span:
+                with tracer.start_as_current_span(
+                    "child",
+                ) as child_span:
+                    pass
+                raise exception
+
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+        self.assertTrue(child_span.status.is_ok)
+        self.assertIsNone(child_span.status.description)
+        self.assertTupleEqual(child_span.events, ())
+
+        self.assertTrue(parent_span.status.is_ok)
+        self.assertIsNone(parent_span.status.description)
+        self.assertTupleEqual(parent_span.events, ())
+
+
+# pylint: disable=protected-access
+class TestTracerProvider(unittest.TestCase):
+    @patch("opentelemetry.sdk.trace.sampling._get_from_env_or_default")
+    @patch.object(Resource, "create")
+    def test_tracer_provider_init_default(self, resource_patch, sample_patch):
+        tracer_provider = trace.TracerProvider()
+        self.assertTrue(
+            isinstance(tracer_provider.id_generator, RandomIdGenerator)
+        )
+        resource_patch.assert_called_once()
+        self.assertIsNotNone(tracer_provider._resource)
+        sample_patch.assert_called_once()
+        self.assertIsNotNone(tracer_provider._span_limits)
+        self.assertIsNotNone(tracer_provider._atexit_handler)

@@ -592,7 +592,10 @@ class TracerShim(Tracer):
 
         current_span = get_current_span()
 
-        if child_of is None and current_span is not INVALID_SPAN_CONTEXT:
+        if (
+            child_of is None
+            and current_span.get_span_context() is not INVALID_SPAN_CONTEXT
+        ):
             child_of = SpanShim(None, None, current_span)
 
         span = self.start_span(
@@ -649,12 +652,16 @@ class TracerShim(Tracer):
         if isinstance(parent, OtelSpanContext):
             parent = NonRecordingSpan(parent)
 
-        parent_span_context = set_span_in_context(parent)
-
-        links = []
+        valid_links = []
         if references:
             for ref in references:
-                links.append(Link(ref.referenced_context.unwrap()))
+                if ref.referenced_context.unwrap() is not INVALID_SPAN_CONTEXT:
+                    valid_links.append(Link(ref.referenced_context.unwrap()))
+
+        if valid_links and parent is None:
+            parent = NonRecordingSpan(valid_links[0].context)
+
+        parent_span_context = set_span_in_context(parent)
 
         # The OpenTracing API expects time values to be `float` values which
         # represent the number of seconds since the epoch. OpenTelemetry
@@ -666,7 +673,7 @@ class TracerShim(Tracer):
         span = self._otel_tracer.start_span(
             operation_name,
             context=parent_span_context,
-            links=links,
+            links=valid_links,
             attributes=tags,
             start_time=start_time_ns,
         )
@@ -723,7 +730,7 @@ class TracerShim(Tracer):
         """
 
         # pylint: disable=redefined-builtin
-        # This implementation does not perform the extracing by itself but
+        # This implementation does not perform the extracting by itself but
         # uses the configured propagators in opentelemetry.propagators.
         # TODO: Support Format.BINARY once it is supported in
         # opentelemetry-python.

@@ -50,7 +50,7 @@ class TestDecision(unittest.TestCase):
 class TestSamplingResult(unittest.TestCase):
     def test_ctr(self):
         attributes = {"asd": "test"}
-        trace_state = dict()
+        trace_state = {}
         # pylint: disable=E1137
         trace_state["test"] = "123"
         result = sampling.SamplingResult(
@@ -255,7 +255,7 @@ class TestSampler(unittest.TestCase):
         # Sample one of every 2^64 (= 5e-20) traces. This is the lowest
         # possible meaningful sampling rate, only traces with trace ID 0x0
         # should get sampled.
-        almost_always_off = sampling.TraceIdRatioBased(2 ** -64)
+        almost_always_off = sampling.TraceIdRatioBased(2**-64)
         self.assertTrue(
             almost_always_off.should_sample(
                 None, 0x0, "span name"
@@ -267,7 +267,7 @@ class TestSampler(unittest.TestCase):
             ).decision.is_sampled()
         )
         self.assertEqual(
-            sampling.TraceIdRatioBased.get_bound_for_rate(2 ** -64), 0x1
+            sampling.TraceIdRatioBased.get_bound_for_rate(2**-64), 0x1
         )
 
         # Sample every trace with trace ID less than 0xffffffffffffffff. In
@@ -278,7 +278,7 @@ class TestSampler(unittest.TestCase):
         #
         #     1 - sys.float_info.epsilon
 
-        almost_always_on = sampling.TraceIdRatioBased(1 - 2 ** -64)
+        almost_always_on = sampling.TraceIdRatioBased(1 - 2**-64)
         self.assertTrue(
             almost_always_on.should_sample(
                 None, 0xFFFFFFFFFFFFFFFE, "span name"
@@ -311,7 +311,7 @@ class TestSampler(unittest.TestCase):
                 None, 0xFFFFFFFFFFFFFFFF, "span name"
             ).decision.is_sampled()
         )
-        # Check that the higest effective sampling rate is actually lower than
+        # Check that the highest effective sampling rate is actually lower than
         # the highest theoretical sampling rate. If this test fails the test
         # above is wrong.
         self.assertLess(

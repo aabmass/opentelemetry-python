@@ -15,8 +15,7 @@
 import typing
 import urllib.parse
 
-import opentelemetry.trace as trace
-from opentelemetry import baggage
+from opentelemetry import baggage, trace
 from opentelemetry.context import Context
 from opentelemetry.propagators.textmap import (
     CarrierT,
@@ -82,7 +81,10 @@ class JaegerPropagator(TextMapPropagator):
         if span_context == trace.INVALID_SPAN_CONTEXT:
             return
 
-        span_parent_id = span.parent.span_id if span.parent else 0
+        # Non-recording spans do not have a parent
+        span_parent_id = (
+            span.parent.span_id if span.is_recording() and span.parent else 0
+        )
         trace_flags = span_context.trace_flags
         if trace_flags.sampled:
             trace_flags |= self.DEBUG_FLAG
@@ -128,12 +130,7 @@ class JaegerPropagator(TextMapPropagator):
 
 
 def _format_uber_trace_id(trace_id, span_id, parent_span_id, flags):
-    return "{trace_id}:{span_id}:{parent_id}:{:02x}".format(
-        flags,
-        trace_id=format_trace_id(trace_id),
-        span_id=format_span_id(span_id),
-        parent_id=format_span_id(parent_span_id),
-    )
+    return f"{format_trace_id(trace_id)}:{format_span_id(span_id)}:{format_span_id(parent_span_id)}:{flags:02x}"
 
 
 def _extract_first_element(

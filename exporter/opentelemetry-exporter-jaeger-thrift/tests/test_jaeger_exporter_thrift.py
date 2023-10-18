@@ -15,7 +15,6 @@
 
 import unittest
 from unittest import mock
-from unittest.mock import patch
 
 # pylint:disable=no-name-in-module
 # pylint:disable=import-error
@@ -37,7 +36,8 @@ from opentelemetry.sdk.environment_variables import (
 )
 from opentelemetry.sdk.resources import SERVICE_NAME
 from opentelemetry.sdk.trace import Resource, TracerProvider
-from opentelemetry.sdk.util.instrumentation import InstrumentationInfo
+from opentelemetry.sdk.util.instrumentation import InstrumentationScope
+from opentelemetry.test.globals_test import TraceGlobalsTest
 from opentelemetry.test.spantestutil import (
     get_span_with_dropped_attributes_events_links,
 )
@@ -53,7 +53,7 @@ def _translate_spans_with_dropped_attributes():
     return translate._translate(ThriftTranslator(max_tag_value_length=5))
 
 
-class TestJaegerExporter(unittest.TestCase):
+class TestJaegerExporter(TraceGlobalsTest, unittest.TestCase):
     def setUp(self):
         # create and save span to be used in tests
         self.context = trace_api.SpanContext(
@@ -73,7 +73,6 @@ class TestJaegerExporter(unittest.TestCase):
         self._test_span.end(end_time=3)
         # pylint: disable=protected-access
 
-    @patch("opentelemetry.exporter.jaeger.thrift.trace._TRACER_PROVIDER", None)
     def test_constructor_default(self):
         # pylint: disable=protected-access
         """Test the default values assigned by constructor."""
@@ -98,7 +97,6 @@ class TestJaegerExporter(unittest.TestCase):
         self.assertTrue(exporter._agent_client is not None)
         self.assertIsNone(exporter._max_tag_value_length)
 
-    @patch("opentelemetry.exporter.jaeger.thrift.trace._TRACER_PROVIDER", None)
     def test_constructor_explicit(self):
         # pylint: disable=protected-access
         """Test the constructor passing all the options."""
@@ -143,7 +141,6 @@ class TestJaegerExporter(unittest.TestCase):
         self.assertTrue(exporter._collector_http_client.auth is None)
         self.assertEqual(exporter._max_tag_value_length, 42)
 
-    @patch("opentelemetry.exporter.jaeger.thrift.trace._TRACER_PROVIDER", None)
     def test_constructor_by_environment_variables(self):
         #  pylint: disable=protected-access
         """Test the constructor using Environment Variables."""
@@ -198,7 +195,6 @@ class TestJaegerExporter(unittest.TestCase):
         self.assertTrue(exporter._collector_http_client.auth is None)
         environ_patcher.stop()
 
-    @patch("opentelemetry.exporter.jaeger.thrift.trace._TRACER_PROVIDER", None)
     def test_constructor_with_no_traceprovider_resource(self):
 
         """Test the constructor when there is no resource attached to trace_provider"""
@@ -234,13 +230,13 @@ class TestJaegerExporter(unittest.TestCase):
         parent_id = 0x1111111111111111
         other_id = 0x2222222222222222
 
-        base_time = 683647322 * 10 ** 9  # in ns
+        base_time = 683647322 * 10**9  # in ns
         start_times = (
             base_time,
-            base_time + 150 * 10 ** 6,
-            base_time + 300 * 10 ** 6,
+            base_time + 150 * 10**6,
+            base_time + 300 * 10**6,
         )
-        durations = (50 * 10 ** 6, 100 * 10 ** 6, 200 * 10 ** 6)
+        durations = (50 * 10**6, 100 * 10**6, 200 * 10**6)
         end_times = (
             start_times[0] + durations[0],
             start_times[1] + durations[1],
@@ -263,7 +259,7 @@ class TestJaegerExporter(unittest.TestCase):
             "key_float": 0.3,
         }
 
-        event_timestamp = base_time + 50 * 10 ** 6
+        event_timestamp = base_time + 50 * 10**6
         event = trace.Event(
             name="event0",
             timestamp=event_timestamp,
@@ -307,7 +303,7 @@ class TestJaegerExporter(unittest.TestCase):
                 context=other_context,
                 parent=None,
                 resource=Resource({}),
-                instrumentation_info=InstrumentationInfo(
+                instrumentation_scope=InstrumentationScope(
                     name="name", version="version"
                 ),
             ),
@@ -342,8 +338,8 @@ class TestJaegerExporter(unittest.TestCase):
                 traceIdLow=trace_id_low,
                 spanId=span_id,
                 parentSpanId=parent_id,
-                startTime=start_times[0] // 10 ** 3,
-                duration=durations[0] // 10 ** 3,
+                startTime=start_times[0] // 10**3,
+                duration=durations[0] // 10**3,
                 flags=0,
                 tags=[
                     jaeger.Tag(
@@ -398,7 +394,7 @@ class TestJaegerExporter(unittest.TestCase):
                 ],
                 logs=[
                     jaeger.Log(
-                        timestamp=event_timestamp // 10 ** 3,
+                        timestamp=event_timestamp // 10**3,
                         fields=[
                             jaeger.Tag(
                                 key="annotation_bool",
@@ -430,8 +426,8 @@ class TestJaegerExporter(unittest.TestCase):
                 traceIdLow=trace_id_low,
                 spanId=parent_id,
                 parentSpanId=0,
-                startTime=start_times[1] // 10 ** 3,
-                duration=durations[1] // 10 ** 3,
+                startTime=start_times[1] // 10**3,
+                duration=durations[1] // 10**3,
                 flags=0,
                 tags=default_tags,
             ),
@@ -441,8 +437,8 @@ class TestJaegerExporter(unittest.TestCase):
                 traceIdLow=trace_id_low,
                 spanId=other_id,
                 parentSpanId=0,
-                startTime=start_times[2] // 10 ** 3,
-                duration=durations[2] // 10 ** 3,
+                startTime=start_times[2] // 10**3,
+                duration=durations[2] // 10**3,
                 flags=0,
                 tags=[
                     jaeger.Tag(
@@ -465,6 +461,16 @@ class TestJaegerExporter(unittest.TestCase):
                         vType=jaeger.TagType.STRING,
                         vStr="version",
                     ),
+                    jaeger.Tag(
+                        key=jaeger_exporter.translate._SCOPE_NAME_KEY,
+                        vType=jaeger.TagType.STRING,
+                        vStr="name",
+                    ),
+                    jaeger.Tag(
+                        key=jaeger_exporter.translate._SCOPE_VERSION_KEY,
+                        vType=jaeger.TagType.STRING,
+                        vStr="version",
+                    ),
                 ],
             ),
         ]
@@ -480,7 +486,6 @@ class TestJaegerExporter(unittest.TestCase):
 
         self.assertEqual(spans, expected_spans)
 
-    @patch("opentelemetry.exporter.jaeger.thrift.trace._TRACER_PROVIDER", None)
     def test_export(self):
 
         """Test that agent and/or collector are invoked"""
@@ -511,9 +516,7 @@ class TestJaegerExporter(unittest.TestCase):
         exporter.export((self._test_span,))
         self.assertEqual(agent_client_mock.emit.call_count, 1)
         self.assertEqual(collector_mock.submit.call_count, 1)
-        # trace_api._TRACER_PROVIDER = None
 
-    @patch("opentelemetry.exporter.jaeger.thrift.trace._TRACER_PROVIDER", None)
     def test_export_span_service_name(self):
         trace_api.set_tracer_provider(
             TracerProvider(
