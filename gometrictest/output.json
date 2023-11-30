@@ -1,0 +1,114 @@
+{
+  "Resource": [
+    {
+      "Key": "service.name",
+      "Value": {
+        "Type": "STRING",
+        "Value": "my-service"
+      }
+    },
+    {
+      "Key": "service.version",
+      "Value": {
+        "Type": "STRING",
+        "Value": "0.1.0"
+      }
+    },
+    {
+      "Key": "telemetry.sdk.language",
+      "Value": {
+        "Type": "STRING",
+        "Value": "go"
+      }
+    },
+    {
+      "Key": "telemetry.sdk.name",
+      "Value": {
+        "Type": "STRING",
+        "Value": "opentelemetry"
+      }
+    },
+    {
+      "Key": "telemetry.sdk.version",
+      "Value": {
+        "Type": "STRING",
+        "Value": "1.21.0"
+      }
+    }
+  ],
+  "ScopeMetrics": [
+    {
+      "Scope": {
+        "Name": "foo",
+        "Version": "",
+        "SchemaURL": ""
+      },
+      "Metrics": [
+        {
+          "Name": "observableCounter",
+          "Description": "",
+          "Unit": "",
+          "Data": {
+            "DataPoints": [
+              {
+                "Attributes": [],
+                "StartTime": "2023-11-30T18:07:30.518135377Z",
+                "Time": "2023-11-30T18:07:30.518191647Z",
+                "Count": 3,
+                "Bounds": [
+                  0,
+                  10,
+                  100,
+                  1000
+                ],
+                "BucketCounts": [
+                  0,
+                  0,
+                  1,
+                  1,
+                  1
+                ],
+                "Min": {},
+                "Max": {},
+                "Sum": 1236
+              }
+            ],
+            "Temporality": "CumulativeTemporality"
+          }
+        },
+        {
+          "Name": "obseravableGauge",
+          "Description": "",
+          "Unit": "",
+          "Data": {
+            "DataPoints": [
+              {
+                "Attributes": [],
+                "StartTime": "2023-11-30T18:07:30.518142767Z",
+                "Time": "2023-11-30T18:07:30.518192677Z",
+                "Count": 3,
+                "Bounds": [
+                  0,
+                  10,
+                  100,
+                  1000
+                ],
+                "BucketCounts": [
+                  0,
+                  0,
+                  1,
+                  1,
+                  1
+                ],
+                "Min": {},
+                "Max": {},
+                "Sum": 0
+              }
+            ],
+            "Temporality": "CumulativeTemporality"
+          }
+        }
+      ]
+    }
+  ]
+}
