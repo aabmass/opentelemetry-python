@@ -111,6 +111,7 @@ from opentelemetry.trace.span import (
 from opentelemetry.trace.status import Status, StatusCode
 from opentelemetry.util import types
 from opentelemetry.util._once import Once
+from opentelemetry.util._contextmanager import universal_contextmanager
 from opentelemetry.util._providers import _load_provider
 
 logger = getLogger(__name__)
@@ -327,7 +328,7 @@ class Tracer(ABC):
             The newly-created span.
         """
 
-    @contextmanager
+    @universal_contextmanager
     @abstractmethod
     def start_as_current_span(
         self,
@@ -434,7 +435,7 @@ class ProxyTracer(Tracer):
     def start_span(self, *args, **kwargs) -> Span:  # type: ignore
         return self._tracer.start_span(*args, **kwargs)  # type: ignore
 
-    @contextmanager  # type: ignore
+    @universal_contextmanager  # type: ignore
     def start_as_current_span(self, *args, **kwargs) -> Iterator[Span]:  # type: ignore
         with self._tracer.start_as_current_span(*args, **kwargs) as span:  # type: ignore
             yield span
@@ -460,7 +461,7 @@ class NoOpTracer(Tracer):
         # pylint: disable=unused-argument,no-self-use
         return INVALID_SPAN
 
-    @contextmanager
+    @universal_contextmanager
     def start_as_current_span(
         self,
         name: str,
@@ -546,7 +547,7 @@ def get_tracer_provider() -> TracerProvider:
     return cast("TracerProvider", _TRACER_PROVIDER)
 
 
-@contextmanager
+@universal_contextmanager
 def use_span(
     span: Span,
     end_on_exit: bool = False,

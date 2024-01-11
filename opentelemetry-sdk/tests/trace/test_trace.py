@@ -14,6 +14,7 @@
 
 # pylint: disable=too-many-lines
 
+import asyncio
 import shutil
 import subprocess
 import unittest
@@ -531,6 +532,27 @@ class TestSpanCreation(unittest.TestCase):
         self.assertEqual(trace_api.get_current_span(), trace_api.INVALID_SPAN)
         self.assertIsNotNone(root2.end_time)
         self.assertIsNot(root1, root2)
+
+    def test_start_as_current_span_async_decorator(self):
+        tracer = new_tracer()
+
+        self.assertEqual(trace_api.get_current_span(), trace_api.INVALID_SPAN)
+
+        @tracer.start_as_current_span("root")
+        async def func():
+            await asyncio.sleep(0)
+            root = trace_api.get_current_span()
+
+            with tracer.start_as_current_span("inner") as inner:
+                pass
+
+            return root, inner
+
+        root, inner = asyncio.run(func())
+
+        # Check that root span starts before and ends after the inner span
+        self.assertLess(root.start_time, inner.start_time)
+        self.assertGreater(root.end_time, inner.end_time)
 
     def test_start_as_current_span_no_end_on_exit(self):
         tracer = new_tracer()
