@@ -66,3 +66,5 @@ docs/examples/django/db.sqlite3
 
 # Semantic conventions
 scripts/semconv/semantic-conventions
+
+/.pants.d

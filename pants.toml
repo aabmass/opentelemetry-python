@@ -1,0 +1,7 @@
+[GLOBAL]
+pants_version = "2.19.1"
+
+backend_packages = [
+  "pants.backend.python",
+  "pants.backend.python.lint.black",
+]
