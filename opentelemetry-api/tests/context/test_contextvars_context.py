@@ -14,11 +14,11 @@
 
 from unittest.mock import patch
 
-from opentelemetry import context
-from opentelemetry.context.contextvars_context import ContextVarsRuntimeContext
-
 # pylint: disable=import-error,no-name-in-module
 from tests.context.base_context import ContextTestCases
+
+from opentelemetry import context
+from opentelemetry.context.contextvars_context import ContextVarsRuntimeContext
 
 
 class TestContextVarsContext(ContextTestCases.BaseTest):

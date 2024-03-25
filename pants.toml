@@ -2,6 +2,45 @@
 pants_version = "2.19.1"
 
 backend_packages = [
-  "pants.backend.python",
-  "pants.backend.python.lint.black",
+    "pants.backend.python",
+    "pants.backend.python.lint.pylint",
+    "pants.backend.python.lint.black",
+    "pants.backend.python.lint.isort",
 ]
+
+pants_ignore = [
+    "*/",
+
+    "!opentelemetry-api/",
+    "!opentelemetry-api/**",
+
+    "!test-dist-info/",
+    "!test-dist-info/**",
+
+    "!tests/",
+    "!tests/opentelemetry-test-utils/",
+    "!tests/opentelemetry-test-utils/**",
+
+    "!3rdparty/",
+    "!3rdparty/**",
+]
+
+[python]
+# interpreter_constraints = ["CPython>=3.8", "CPython<=3.11"]
+interpreter_constraints = ["CPython==3.11.*"]
+enable_resolves = true
+
+# [python.resolves_to_only_binary]
+# __default__ = ["grpcio-tools"]
+
+[black]
+install_from_resolve = "python-default"
+
+[isort]
+install_from_resolve = "python-default"
+
+[pylint]
+install_from_resolve = "python-default"
+
+[pytest]
+install_from_resolve = "python-default"

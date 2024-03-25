@@ -6,11 +6,11 @@ sphinx-jekyll-builder==0.3.0
 
 # Need to install the api/sdk in the venv for autodoc. Modifying sys.path
 # doesn't work for pkg_resources.
-./opentelemetry-api
-./opentelemetry-semantic-conventions
-./opentelemetry-sdk
-./shim/opentelemetry-opencensus-shim
-./shim/opentelemetry-opentracing-shim
+# ./opentelemetry-api
+# ./opentelemetry-semantic-conventions
+# ./opentelemetry-sdk
+# ./shim/opentelemetry-opencensus-shim
+# ./shim/opentelemetry-opentracing-shim
 
 # Required by instrumentation and exporter packages
 grpcio~=1.27
