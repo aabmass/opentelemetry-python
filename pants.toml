@@ -47,9 +47,6 @@ install_from_resolve = "tools"
 [pylint]
 install_from_resolve = "tools"
 
-[pytest]
-install_from_resolve = "tools"
-
 [mypy]
 install_from_resolve = "tools"
 config = "mypy.ini"

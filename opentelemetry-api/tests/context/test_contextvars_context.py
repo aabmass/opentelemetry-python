@@ -17,7 +17,7 @@ from unittest.mock import patch
 from opentelemetry import context
 from opentelemetry.context.contextvars_context import ContextVarsRuntimeContext
 
-# pylint: disable=import-error,no-name-in-module
+# pylint: disable=import-error,no-name-in-module pants: no-infer-dep
 from tests.context.base_context import ContextTestCases
 
 

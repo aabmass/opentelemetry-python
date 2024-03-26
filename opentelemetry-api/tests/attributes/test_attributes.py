@@ -19,7 +19,6 @@ from typing import MutableSequence
 
 from opentelemetry.attributes import BoundedAttributes, _clean_attribute
 
-
 print("hello")
 
 

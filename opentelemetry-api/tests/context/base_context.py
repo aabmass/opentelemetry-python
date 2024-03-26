@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# TODO: this "shared" code is only used by test_contextvars_context.py and should be merged
+# into that file
 import unittest
 from logging import ERROR
 
