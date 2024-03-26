@@ -1,5 +1,5 @@
-from opentelemetry.util._importlib_metadata import entry_points
 from opentelemetry.context import get_current
+from opentelemetry.util._importlib_metadata import entry_points
 
 
 def test_foo():
