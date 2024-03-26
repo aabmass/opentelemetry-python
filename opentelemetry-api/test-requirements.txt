@@ -1,8 +1,10 @@
 asgiref==3.7.2
 attrs==23.2.0
-Deprecated==1.2.14
+# already accounted for in pyproject.toml
+# Deprecated==1.2.14
 flaky==3.7.0
-importlib-metadata==6.11.0
+# already accounted for in pyproject.toml
+# importlib-metadata==6.11.0
 iniconfig==2.0.0
 packaging==23.2
 pluggy==1.4.0
@@ -14,4 +16,6 @@ tomli==2.0.1
 typing_extensions==4.10.0
 wrapt==1.16.0
 zipp==3.17.0
--e opentelemetry-api
+# -e opentelemetry-api
+
+types-Deprecated==1.2.9.20240311

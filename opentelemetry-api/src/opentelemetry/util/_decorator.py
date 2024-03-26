@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Turn off checking for this file to avoid making a mess and define a stub
+# type: ignore
+
 import asyncio
 import contextlib
 import functools

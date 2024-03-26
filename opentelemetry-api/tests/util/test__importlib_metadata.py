@@ -46,10 +46,10 @@ class TestEntryPoints(TestCase):
 
         self.assertIsInstance(entry_points, EntryPoints)
 
-        entry_points = entry_points.select(group="opentelemetry_propagator")
+        entry_points = entry_points.select(group="opentelemetry_propagator")  # type: ignore
         self.assertIsInstance(entry_points, EntryPoints)
 
-        entry_points = entry_points.select(name="baggage")
+        entry_points = entry_points.select(name="baggage")  # type: ignore
         self.assertIsInstance(entry_points, EntryPoints)
 
         entry_point = next(iter(entry_points))
@@ -67,7 +67,7 @@ class TestEntryPoints(TestCase):
         )
         self.assertIsInstance(entry_points, EntryPoints)
 
-        entry_points = entry_points.select(name="baggage")
+        entry_points = entry_points.select(name="baggage")  # type: ignore
         self.assertIsInstance(entry_points, EntryPoints)
 
         entry_point = next(iter(entry_points))

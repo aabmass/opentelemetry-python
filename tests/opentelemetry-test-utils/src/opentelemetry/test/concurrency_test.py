@@ -16,7 +16,7 @@ import sys
 import threading
 import unittest
 from functools import partial
-from typing import Callable, List, Optional, TypeVar
+from typing import Any, Callable, List, Optional, TypeVar
 from unittest.mock import Mock
 
 ReturnT = TypeVar("ReturnT")
@@ -34,7 +34,7 @@ class MockFunc:
         self.call_count = 0
         self.mock = Mock()
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Mock:
         with self.lock:
             self.call_count += 1
         return self.mock

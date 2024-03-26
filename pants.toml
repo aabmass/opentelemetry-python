@@ -6,6 +6,7 @@ backend_packages = [
     "pants.backend.python.lint.pylint",
     "pants.backend.python.lint.black",
     "pants.backend.python.lint.isort",
+    "pants.backend.python.typecheck.mypy",
 ]
 
 pants_ignore = [
@@ -27,7 +28,6 @@ pants_ignore = [
 
 [python]
 interpreter_constraints = ["CPython>=3.8, <3.12"]
-# interpreter_constraints = ["CPython==3.11.*"]
 enable_resolves = true
 
 [python.resolves]
@@ -37,9 +37,6 @@ tools = "3rdparty/python/tools.lock"
 [python.resolves_to_interpreter_constraints]
 # Use a single python version for dev tooling
 tools = ["CPython==3.11.*"]
-
-# [python.resolves_to_only_binary]
-# __default__ = ["grpcio-tools"]
 
 [black]
 install_from_resolve = "tools"
@@ -52,3 +49,7 @@ install_from_resolve = "tools"
 
 [pytest]
 install_from_resolve = "tools"
+
+[mypy]
+install_from_resolve = "tools"
+config = "mypy.ini"

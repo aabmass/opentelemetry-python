@@ -238,7 +238,7 @@ class TraceState(typing.Mapping[str, str]):
             typing.Sequence[typing.Tuple[str, str]]
         ] = None,
     ) -> None:
-        self._dict = {}  # type: dict[str, str]
+        self._dict: typing.Dict[str, str] = {}
         if entries is None:
             return
         if len(entries) > _TRACECONTEXT_MAXIMUM_TRACESTATE_KEYS:
@@ -381,7 +381,7 @@ class TraceState(typing.Mapping[str, str]):
             If the number of keys is beyond the maximum, all values
             will be discarded and an empty tracestate will be returned.
         """
-        pairs = {}  # type: dict[str, str]
+        pairs: typing.Dict[str, str] = {}
         for header in header_list:
             members: typing.List[str] = re.split(_delimiter_pattern, header)
             for member in members:

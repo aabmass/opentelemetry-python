@@ -32,17 +32,17 @@ def reset_trace_globals() -> None:
 # pylint: disable=protected-access
 def reset_metrics_globals() -> None:
     """WARNING: only use this for tests."""
-    metrics_api._METER_PROVIDER_SET_ONCE = Once()  # type: ignore[attr-defined]
-    metrics_api._METER_PROVIDER = None  # type: ignore[attr-defined]
-    metrics_api._PROXY_METER_PROVIDER = _ProxyMeterProvider()  # type: ignore[attr-defined]
+    metrics_api._METER_PROVIDER_SET_ONCE = Once()
+    metrics_api._METER_PROVIDER = None
+    metrics_api._PROXY_METER_PROVIDER = _ProxyMeterProvider()
 
 
 # pylint: disable=protected-access
 def reset_logging_globals() -> None:
     """WARNING: only use this for tests."""
-    logging_api._LOGGER_PROVIDER_SET_ONCE = Once()  # type: ignore[attr-defined]
-    logging_api._LOGGER_PROVIDER = None  # type: ignore[attr-defined]
-    logging_api._PROXY_LOGGER_PROVIDER = logging_api.ProxyLoggerProvider()  # type: ignore[attr-defined]
+    logging_api._LOGGER_PROVIDER_SET_ONCE = Once()
+    logging_api._LOGGER_PROVIDER = None
+    logging_api._PROXY_LOGGER_PROVIDER = logging_api.ProxyLoggerProvider()
 
 
 class TraceGlobalsTest(unittest.TestCase):

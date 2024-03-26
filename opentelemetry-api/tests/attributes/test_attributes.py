@@ -20,6 +20,9 @@ from typing import MutableSequence
 from opentelemetry.attributes import BoundedAttributes, _clean_attribute
 
 
+print("hello")
+
+
 class TestAttributes(unittest.TestCase):
     def assertValid(self, value, key="k"):
         expected = value
