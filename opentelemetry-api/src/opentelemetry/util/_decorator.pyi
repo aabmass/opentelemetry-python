@@ -20,7 +20,9 @@ from typing_extensions import ParamSpec
 _T_co = TypeVar("_T_co", covariant=True)
 _P = ParamSpec("_P")
 
+# pylint: disable=protected-access
 class _AgnosticContextManager(contextlib._GeneratorContextManager[_T_co]):
+
     """Context manager that can decorate both async and sync functions.
 
     This is an overridden version of the contextlib._GeneratorContextManager

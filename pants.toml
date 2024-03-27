@@ -7,6 +7,10 @@ backend_packages = [
     "pants.backend.python.lint.black",
     "pants.backend.python.lint.isort",
     "pants.backend.python.typecheck.mypy",
+
+    # Consider using this to automatically supply python versions
+    # https://www.pantsbuild.org/blog/2023/03/31/two-hermetic-pythons
+    # "pants.backend.python.providers.experimental.pyenv",
 ]
 
 pants_ignore = [
@@ -36,17 +40,26 @@ tools = "3rdparty/python/tools.lock"
 
 [python.resolves_to_interpreter_constraints]
 # Use a single python version for dev tooling
-tools = ["CPython==3.11.*"]
+tools = ["CPython>=3.10"]
 
 [black]
 install_from_resolve = "tools"
+interpreter_constraints = ["CPython>=3.10"]
 
 [isort]
 install_from_resolve = "tools"
+interpreter_constraints = ["CPython>=3.10"]
 
 [pylint]
+# Pylint always runs using the interpreter_constraints of the target so the
+# interpreter_constraints option is not available
 install_from_resolve = "tools"
+# Hack for namespace packages so know pylint knows where imports are relative too.. It turns
+# out we are not checking some of the codebase at all
+# https://github.com/open-telemetry/opentelemetry-python/issues/3814
+args = ["--source-roots=opentelemetry-api/src"]
+# args = ["--source-roots=opentelemetry-*/src"]
 
 [mypy]
 install_from_resolve = "tools"
-config = "mypy.ini"
+interpreter_constraints = ["CPython>=3.10"]
