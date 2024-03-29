@@ -14,9 +14,28 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-# Only lint for import sorting for now
 select = [
+  # defaults
+  "E4",
+  "E7",
+  "E9",
+  "F",
+
+  # additional checks
+  "E", # pycodestyle
   "I", # isort
+  "PL", # pylint
+
+  # TODO: uncomment
+  # "SLF001", # flake8-slf (private-member-access)
+]
+
+ignore = [
+  "E501",
+  # pylint too-many-arguments
+  "PLR0913",
+  # pylint magic-value-comparison
+  "PLR2004",
 ]
 
 [tool.ruff.lint.isort]
