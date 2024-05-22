@@ -1,0 +1,22 @@
+# serializer version: 1
+# name: test_counter2
+  '''
+  # HELP test_with_collision_total My description
+  # TYPE test_with_collision_total counter
+  test_with_collision_total{hello_world="hello_world"} 1.0
+  '''
+# ---
+# name: test_counter[my.counter.name-s]
+  '''
+  # HELP my_counter_name_seconds_total My description
+  # TYPE my_counter_name_seconds_total counter
+  my_counter_name_seconds_total{foo1_bar_baz="hello world"} 10.0
+  '''
+# ---
+# name: test_counter[request.count-{requests}]
+  '''
+  # HELP request_count_total My description
+  # TYPE request_count_total counter
+  request_count_total{foo1_bar_baz="hello world"} 10.0
+  '''
+# ---
