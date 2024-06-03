@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling", "hatch-build-scripts"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opentelemetry-otelcol"
+description = "Python wrapper for the OpenTelemetry collector contrib"
+readme = "README.rst"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.8"
+authors = [
+    { name = "OpenTelemetry Authors", email = "cncf-opentelemetry-contributors@lists.cncf.io" },
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: OpenTelemetry",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Typing :: Typed",
+]
+dependencies = []
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api"
+
+[tool.hatch.version]
+path = "src/opentelemetry/otelcol/version.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opentelemetry"]
+
+# Build the Go extension code with hatch-build-scripts
+# https://github.com/rmorshea/hatch-build-scripts
+[[tool.hatch.build.hooks.build-scripts.scripts]]
+out_dir = "src/opentelemetry/otelcol" # not sure why this is needed
+commands = ["make sharedobject"]
+artifacts = ["*.so"]
