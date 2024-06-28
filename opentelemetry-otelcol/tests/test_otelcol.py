@@ -12,14 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import signal
 from textwrap import dedent
-from threading import Thread
 from time import sleep
 from unittest import TestCase
 
-from opentelemetry.otelcol import otelcolcontrib_main
+from opentelemetry.otelcol import Collector
 
 
 class TestOtelCol(TestCase):
@@ -61,4 +58,6 @@ class TestOtelCol(TestCase):
                   exporters: [otlp]
             """
         )
-        otelcolcontrib_main(collector_config)
+        col = Collector(collector_config)
+        sleep(5)
+        col.shutdown()

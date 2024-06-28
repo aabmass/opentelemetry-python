@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from opentelemetry.otelcol._wrapper import otelcolcontrib_main
+from opentelemetry.otelcol._wrapper import Collector, CollectorException
 
 
-__all__ = ["otelcolcontrib_main"]
+__all__ = ["Collector", "CollectorException"]

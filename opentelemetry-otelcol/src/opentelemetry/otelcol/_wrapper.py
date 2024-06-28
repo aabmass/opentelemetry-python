@@ -22,30 +22,41 @@ logger = logging.getLogger(__name__)
 sopath = pathlib.Path(__file__).parent / "otelcolcontrib.so"
 logger.info("Searching for dll/so at %s", sopath)
 otelcolcontrib = ctypes.CDLL(str(sopath))
-# otelcolcontrib.OtelColContribMain.restype = ctypes.c_char_p
-
-
-class CollectorInstance(ctypes.Structure):
-    _fields_ = [("err", ctypes.c_char * 128), ("handle", ctypes.c_int)]
-
-    err: bytes
-    handle: int
-
-
-# otelcolcontrib.OtelColContribMain.restype = CollectorInstance
 
 
 class CollectorException(Exception):
     pass
 
 
-def otelcolcontrib_main(config_yaml: str) -> None:
-    config_bytes = config_yaml.encode()
+class _CollectorInstance(ctypes.Structure):
+    _fields_ = [("err", ctypes.c_char * 128), ("handle", ctypes.c_uint32)]
 
-    inst = CollectorInstance()
-    res: int = otelcolcontrib.OtelColContribMain(
-        config_bytes, ctypes.pointer(inst)
-    )
-    print(f"Got {res=}, {inst.err=}, {inst.handle=}")
-    if res:
-        raise CollectorException(inst.err.decode())
+    err: bytes
+    handle: int
+
+    def check_error(self) -> None:
+        if self.err:
+            raise CollectorException(self.err.decode())
+
+    def __repr__(self) -> str:
+        return f"_CollectorInstance(err={self.err}, handle={self.handle})"
+
+
+otelcolcontrib.NewCollector.restype = _CollectorInstance
+otelcolcontrib.ShutdownCollector.argtypes = [_CollectorInstance]
+otelcolcontrib.ShutdownCollector.restype = _CollectorInstance
+
+
+class Collector:
+    def __init__(self, config_yaml: str) -> None:
+        config_bytes = config_yaml.encode()
+
+        self._inst: _CollectorInstance = otelcolcontrib.NewCollector(
+            config_bytes
+        )
+        print(f"Got {self._inst}")
+        self._inst.check_error()
+
+    def shutdown(self) -> None:
+        self._inst = otelcolcontrib.ShutdownCollector(self._inst)
+        self._inst.check_error()
