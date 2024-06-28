@@ -22,16 +22,6 @@ from unittest import TestCase
 from opentelemetry.otelcol import otelcolcontrib_main
 
 
-def send_sigterm_thread(
-    delay_seconds: float, sig: signal.Signals = signal.SIGTERM
-) -> Thread:
-    def target() -> None:
-        sleep(delay_seconds)
-        os.kill(os.getpid(), sig)
-
-    return Thread(target=target)
-
-
 class TestOtelCol(TestCase):
     def test_otelcolmain(self) -> None:
         collector_config = dedent(
@@ -71,8 +61,4 @@ class TestOtelCol(TestCase):
                   exporters: [otlp]
             """
         )
-
-        thread = send_sigterm_thread(1)
-        thread.start()
         otelcolcontrib_main(collector_config)
-        thread.join()

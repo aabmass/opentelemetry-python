@@ -1,5 +1,13 @@
 package main
 
+/*
+#include <string.h>
+struct CollectorInstance {
+	// a 128 byte buffer to write an error message into
+	char err[128];
+	int handle;
+};
+*/
 import "C"
 
 import (
@@ -15,12 +23,23 @@ import (
 )
 
 //export OtelColContribMain
-func OtelColContribMain(yaml *C.char) *C.char {
+func OtelColContribMain(yaml *C.char, handle *C.struct_CollectorInstance) int {
 	yamlUri := "yaml:" + C.GoString(yaml)
 	if err := main2(yamlUri); err != nil {
-		return C.CString(err.Error())
+		writeToCharBuf(handle.err[:], err.Error())
+		return 1
 	}
-	return nil
+	handle.handle = 123
+	return 0
+}
+
+func writeToCharBuf(buf []C.char, gostring string) {
+	for i, b := range append([]byte(gostring), 0) {
+		if i >= len(buf) {
+			return
+		}
+		buf[i] = C.char(b)
+	}
 }
 
 func main2(yamlUri string) error {

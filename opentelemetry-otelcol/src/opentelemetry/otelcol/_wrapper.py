@@ -16,14 +16,23 @@ import logging
 
 import ctypes
 import pathlib
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 sopath = pathlib.Path(__file__).parent / "otelcolcontrib.so"
 logger.info("Searching for dll/so at %s", sopath)
 otelcolcontrib = ctypes.CDLL(str(sopath))
-otelcolcontrib.OtelColContribMain.restype = ctypes.c_char_p
+# otelcolcontrib.OtelColContribMain.restype = ctypes.c_char_p
+
+
+class CollectorInstance(ctypes.Structure):
+    _fields_ = [("err", ctypes.c_char * 128), ("handle", ctypes.c_int)]
+
+    err: bytes
+    handle: int
+
+
+# otelcolcontrib.OtelColContribMain.restype = CollectorInstance
 
 
 class CollectorException(Exception):
@@ -33,6 +42,10 @@ class CollectorException(Exception):
 def otelcolcontrib_main(config_yaml: str) -> None:
     config_bytes = config_yaml.encode()
 
-    res: Optional[bytes] = otelcolcontrib.OtelColContribMain(config_bytes)
+    inst = CollectorInstance()
+    res: int = otelcolcontrib.OtelColContribMain(
+        config_bytes, ctypes.pointer(inst)
+    )
+    print(f"Got {res=}, {inst.err=}, {inst.handle=}")
     if res:
-        raise CollectorException(res.decode())
+        raise CollectorException(inst.err.decode())
