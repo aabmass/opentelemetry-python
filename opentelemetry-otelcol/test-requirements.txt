@@ -18,3 +18,5 @@ zipp==3.17.0
 -e opentelemetry-semantic-conventions
 -e tests/opentelemetry-test-utils
 -e opentelemetry-api
+-e exporter/opentelemetry-exporter-otlp-proto-grpc
+-e exporter/opentelemetry-exporter-otlp-proto-common/

@@ -17,6 +17,8 @@ import logging
 import ctypes
 import pathlib
 
+DEFAULT_TIMEOUT_MILLIS = 2000
+
 logger = logging.getLogger(__name__)
 
 sopath = pathlib.Path(__file__).parent / "otelcolcontrib.so"
@@ -42,6 +44,7 @@ class _CollectorInstance(ctypes.Structure):
         return f"_CollectorInstance(err={self.err}, handle={self.handle})"
 
 
+otelcolcontrib.NewCollector.argtypes = [ctypes.c_char_p, ctypes.c_uint32]
 otelcolcontrib.NewCollector.restype = _CollectorInstance
 otelcolcontrib.ShutdownCollector.argtypes = [_CollectorInstance]
 otelcolcontrib.ShutdownCollector.restype = _CollectorInstance
@@ -52,10 +55,16 @@ class Collector:
         config_bytes = config_yaml.encode()
 
         self._inst: _CollectorInstance = otelcolcontrib.NewCollector(
-            config_bytes
+            config_bytes,
+            # timeout millis,
+            2000,
         )
         self._inst.check_error()
 
     def shutdown(self) -> None:
-        self._inst = otelcolcontrib.ShutdownCollector(self._inst)
+        self._inst = otelcolcontrib.ShutdownCollector(
+            self._inst,
+            # timeout millis,
+            10_000,
+        )
         self._inst.check_error()

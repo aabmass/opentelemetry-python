@@ -16,7 +16,13 @@ from textwrap import dedent
 from time import sleep
 from unittest import TestCase
 
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+    OTLPSpanExporter,
+)
 from opentelemetry.otelcol import Collector
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 
 class TestOtelCol(TestCase):
@@ -28,31 +34,40 @@ class TestOtelCol(TestCase):
                   otlp:
                     protocols:
                       grpc:
-                    #   http:
+                      http:
 
                 processors:
                   batch:
 
                 exporters:
-                  otlp:
-                    endpoint: otelcol:4317
+                  debug:
+                    verbosity: detailed
+                  googlecloud:
+                    project: ${env:PROJECT_ID}
 
                 service:
                   pipelines:
                     traces:
                       receivers: [otlp]
                       processors: [batch]
-                      exporters: [otlp]
+                      exporters: [debug, googlecloud]
                     metrics:
                       receivers: [otlp]
                       processors: [batch]
-                      exporters: [otlp]
+                      exporters: [debug]
                     logs:
                       receivers: [otlp]
                       processors: [batch]
-                      exporters: [otlp]
+                      exporters: [debug]
                 """
             )
         )
-        sleep(1)
+
+        tp = TracerProvider(
+            resource=Resource.create({"service.name": "foobar"})
+        )
+        tp.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+        with tp.get_tracer("foo").start_as_current_span("example-span"):
+            sleep(0.1)
+        tp.shutdown()
         col.shutdown()

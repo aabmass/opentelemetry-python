@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -29,42 +30,57 @@ import (
 )
 
 var (
-	mu              = sync.Mutex{}
-	handlesToCancel = map[C.uint]func() error{}
+	mu                = sync.Mutex{}
+	handlesToShutdown = map[C.uint]func(context.Context) error{}
 )
 
 //export NewCollector
-func NewCollector(yaml *C.char) collectorInstance {
+func NewCollector(yaml *C.char, timeoutMillis uint) collectorInstance {
 	mu.Lock()
 	defer mu.Unlock()
 	yamlUri := "yaml:" + C.GoString(yaml)
 	inst := newCollectorInstance(nil)
 
-	cancel, err := mainNonBlocking(context.Background(), yamlUri)
+	ctx := context.Background()
+	if timeoutMillis > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMillis))
+		defer cancel()
+	}
+
+	shutdown, err := mainNonBlocking(ctx, yamlUri)
 	if err != nil {
 		inst.setError(err)
 		return inst
 	}
 
-	handlesToCancel[inst.handle] = cancel
+	handlesToShutdown[inst.handle] = shutdown
 
 	return inst
 }
 
 //export ShutdownCollector
-func ShutdownCollector(c collectorInstance) collectorInstance {
+func ShutdownCollector(c collectorInstance, timeoutMillis uint) collectorInstance {
 	mu.Lock()
 	defer mu.Unlock()
-	fmt.Printf("Stopping collector handle ID: %v\n", c.handle)
-	cancel, ok := handlesToCancel[c.handle]
+
+	ctx := context.Background()
+	if timeoutMillis > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMillis))
+		defer cancel()
+	}
+
+	log.Printf("Stopping collector handle ID: %v", c.handle)
+	cancel, ok := handlesToShutdown[c.handle]
 	if !ok {
 		c.setError(fmt.Errorf("CollectorInstance with handle %v is not known", c.handle))
 		return c
 	}
 
-	fmt.Printf("\n\nGot handle %v, cancel func %v\n\n", c.handle, cancel)
-	c.setError(cancel())
-	delete(handlesToCancel, c.handle)
+	log.Printf("Got handle %v, cancel func %v", c.handle, cancel)
+	c.setError(cancel(ctx))
+	delete(handlesToShutdown, c.handle)
 	return c
 }
 
@@ -99,32 +115,64 @@ func writeToCharBuf(buf []C.char, gostring string) {
 	}
 }
 
-func mainNonBlocking(ctx context.Context, yamlUri string) (func() error, error) {
-	ctx, cancel := context.WithCancel(ctx)
+var errTerminatedEarly = errors.New("collector terminated unexpectedly without error, check logs for details")
+
+func mainNonBlocking(ctx context.Context, yamlUri string) (func(context.Context) error, error) {
+	col, err := createOtelcol(ctx, yamlUri)
+	if err != nil {
+		return nil, err
+	}
+
 	done := make(chan error)
+	// Run collector in background
 	go func() {
-		defer cancel()
-		done <- main2(ctx, yamlUri)
+		// run with detached context
+		done <- col.Run(context.WithoutCancel(ctx))
 	}()
 
-	// Wait a short time to see if we fail fast, otherwise return without error to the caller
-	t := time.NewTimer(time.Millisecond * 50)
-	select {
-	case err := <-done:
+	shutdown := func(ctx context.Context) error {
+		log.Print("Starting shutdown")
+		col.Shutdown()
+		log.Print("Shutdown done")
+		defer log.Print("Receiver return value in channel")
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-done:
+			return err
+		}
+	}
+
+	// Poll collector state until running. Unfortunately there is no channel to subscribe to
+	// state changes
+	ticker := time.NewTicker(time.Millisecond * 5)
+	for col.GetState() == otelcol.StateStarting {
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			log.Printf("while waiting for collector to start: %v", ctx.Err().Error())
+			return nil, fmt.Errorf("collector never entered running state (state=%v): %w", col.GetState(), ctx.Err())
+		case err := <-done:
+			if err != nil {
+				return nil, err
+			}
+			return nil, errTerminatedEarly
+		}
+	}
+
+	// check if passed Running
+	if col.GetState() >= otelcol.StateClosing {
+		err := <-done
 		if err != nil {
 			return nil, err
 		}
-		return nil, errors.New("collector terminated early without error, check logs for more info")
-	case <-t.C:
-		return func() error {
-			cancel()
-			return <-done
-		}, nil
+		return nil, errTerminatedEarly
 	}
+
+	return shutdown, nil
 }
 
-func main2(ctx context.Context, yamlUri string) error {
-
+func createOtelcol(ctx context.Context, yamlUri string) (*otelcol.Collector, error) {
 	info := component.BuildInfo{
 		Command:     "otelcol-contrib",
 		Description: "OpenTelemetry Collector Contrib",
@@ -134,6 +182,8 @@ func main2(ctx context.Context, yamlUri string) error {
 	set := otelcol.CollectorSettings{
 		BuildInfo: info,
 		Factories: components,
+		// Let the python process handle gracefully shutting down
+		DisableGracefulShutdown: true,
 		ConfigProviderSettings: otelcol.ConfigProviderSettings{
 			ResolverSettings: confmap.ResolverSettings{
 				URIs: []string{yamlUri},
@@ -151,12 +201,14 @@ func main2(ctx context.Context, yamlUri string) error {
 		},
 	}
 
-	return runInteractive2(ctx, set)
-}
+	col, err := otelcol.NewCollector(set)
+	if err != nil {
+		return nil, err
+	}
 
-func runInteractive2(ctx context.Context, params otelcol.CollectorSettings) error {
-	cmd := otelcol.NewCommand(params)
-	// Unset args
-	cmd.SetArgs([]string{})
-	return cmd.ExecuteContext(ctx)
+	// Fail fast
+	if err := col.DryRun(ctx); err != nil {
+		return nil, err
+	}
+	return col, nil
 }
