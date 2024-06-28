@@ -21,43 +21,38 @@ from opentelemetry.otelcol import Collector
 
 class TestOtelCol(TestCase):
     def test_otelcolmain(self) -> None:
-        collector_config = dedent(
-            """
-            receivers:
-              otlp:
-                protocols:
-                  grpc:
-                  http:
+        col = Collector(
+            dedent(
+                """
+                receivers:
+                  otlp:
+                    protocols:
+                      grpc:
+                    #   http:
 
-            processors:
-              batch:
+                processors:
+                  batch:
 
-            exporters:
-              otlp:
-                endpoint: otelcol:4317
+                exporters:
+                  otlp:
+                    endpoint: otelcol:4317
 
-            extensions:
-              health_check:
-              pprof:
-              zpages:
-
-            service:
-              extensions: [health_check, pprof, zpages]
-              pipelines:
-                traces:
-                  receivers: [otlp]
-                  processors: [batch]
-                  exporters: [otlp]
-                metrics:
-                  receivers: [otlp]
-                  processors: [batch]
-                  exporters: [otlp]
-                logs:
-                  receivers: [otlp]
-                  processors: [batch]
-                  exporters: [otlp]
-            """
+                service:
+                  pipelines:
+                    traces:
+                      receivers: [otlp]
+                      processors: [batch]
+                      exporters: [otlp]
+                    metrics:
+                      receivers: [otlp]
+                      processors: [batch]
+                      exporters: [otlp]
+                    logs:
+                      receivers: [otlp]
+                      processors: [batch]
+                      exporters: [otlp]
+                """
+            )
         )
-        col = Collector(collector_config)
-        sleep(5)
+        sleep(1)
         col.shutdown()

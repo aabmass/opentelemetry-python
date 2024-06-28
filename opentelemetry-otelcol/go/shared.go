@@ -2,8 +2,8 @@ package main
 
 /*
 struct CollectorInstance {
-	// a 128 byte buffer to write an error message into
-	char err[128];
+	// a 1024 byte buffer to write an error message into
+	char err[1024];
 	unsigned int handle;
 };
 */
@@ -11,8 +11,11 @@ import "C"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
+	"sync"
+	"time"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/confmap"
@@ -26,21 +29,32 @@ import (
 )
 
 var (
+	mu              = sync.Mutex{}
 	handlesToCancel = map[C.uint]func() error{}
 )
 
 //export NewCollector
 func NewCollector(yaml *C.char) collectorInstance {
+	mu.Lock()
+	defer mu.Unlock()
 	yamlUri := "yaml:" + C.GoString(yaml)
 	inst := newCollectorInstance(nil)
 
-	handlesToCancel[inst.handle] = mainNonBlocking(context.Background(), yamlUri)
+	cancel, err := mainNonBlocking(context.Background(), yamlUri)
+	if err != nil {
+		inst.setError(err)
+		return inst
+	}
+
+	handlesToCancel[inst.handle] = cancel
 
 	return inst
 }
 
 //export ShutdownCollector
 func ShutdownCollector(c collectorInstance) collectorInstance {
+	mu.Lock()
+	defer mu.Unlock()
 	fmt.Printf("Stopping collector handle ID: %v\n", c.handle)
 	cancel, ok := handlesToCancel[c.handle]
 	if !ok {
@@ -48,6 +62,7 @@ func ShutdownCollector(c collectorInstance) collectorInstance {
 		return c
 	}
 
+	fmt.Printf("\n\nGot handle %v, cancel func %v\n\n", c.handle, cancel)
 	c.setError(cancel())
 	delete(handlesToCancel, c.handle)
 	return c
@@ -74,26 +89,37 @@ func writeToCharBuf(buf []C.char, gostring string) {
 		i int
 		b byte
 	)
-	for i, b = range []byte(gostring) {
+	for i, b = range append([]byte(gostring), 0) {
 		if i == len(buf)-1 {
-			break
+			// gostring too long, write null terminator
+			buf[i] = 0
+			return
 		}
 		buf[i] = C.char(b)
 	}
-	// null terminate
-	buf[i] = 0
 }
 
-func mainNonBlocking(ctx context.Context, yamlUri string) func() error {
+func mainNonBlocking(ctx context.Context, yamlUri string) (func() error, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan error)
 	go func() {
+		defer cancel()
 		done <- main2(ctx, yamlUri)
 	}()
 
-	return func() error {
-		cancel()
-		return <-done
+	// Wait a short time to see if we fail fast, otherwise return without error to the caller
+	t := time.NewTimer(time.Millisecond * 50)
+	select {
+	case err := <-done:
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("collector terminated early without error, check logs for more info")
+	case <-t.C:
+		return func() error {
+			cancel()
+			return <-done
+		}, nil
 	}
 }
 

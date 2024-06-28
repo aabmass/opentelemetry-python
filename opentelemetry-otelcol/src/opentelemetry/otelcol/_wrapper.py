@@ -29,7 +29,7 @@ class CollectorException(Exception):
 
 
 class _CollectorInstance(ctypes.Structure):
-    _fields_ = [("err", ctypes.c_char * 128), ("handle", ctypes.c_uint32)]
+    _fields_ = [("err", ctypes.c_char * 1024), ("handle", ctypes.c_uint32)]
 
     err: bytes
     handle: int
@@ -54,7 +54,6 @@ class Collector:
         self._inst: _CollectorInstance = otelcolcontrib.NewCollector(
             config_bytes
         )
-        print(f"Got {self._inst}")
         self._inst.check_error()
 
     def shutdown(self) -> None:
