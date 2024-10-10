@@ -18,6 +18,7 @@ from os import environ
 from threading import Lock
 from time import time_ns
 from typing import Optional, Sequence
+import weakref
 
 # This kind of import is needed to avoid Sphinx errors.
 import opentelemetry.sdk.metrics
@@ -393,7 +394,7 @@ class MeterProvider(APIMeterProvider):
     """
 
     _all_metric_readers_lock = Lock()
-    _all_metric_readers = set()
+    _all_metric_readers = weakref.WeakSet()
 
     def __init__(
         self,
