@@ -31,43 +31,43 @@ macro print_uretprobe(func_name, ctx_ptr) {
 
 // These are the official C API for enter/exiting a context, but is not called by the cpython
 // internals. Something like uvloop might use this.
-uprobe:/usr/lib/libpython3.13.so:PyContext_Enter {
+uprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:PyContext_Enter {
     print_uprobe(func, arg0)
 }
 
-uprobe:/usr/lib/libpython3.13.so:PyContext_Exit {
+uprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:PyContext_Exit {
      print_uprobe(func, arg0)
 }
 
 // This is the C implementation of contextvars.run() python function
 // https://github.com/python/cpython/blob/v3.13.9/Python/context.c#L648-L650. This plus the
 // PyContext_Enter/PyContext_Exit is probably the most reliable.
-uprobe:/usr/lib/libpython3.13.so:context_run* {
+uprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:context_run* {
     print_uprobe(func, arg0);
 }
-uretprobe:/usr/lib/libpython3.13.so:context_run* {
+uretprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:context_run* {
     print_uretprobe_void(func, retval);
 }
 
 // -----------
 
 // These might be useful for tracking parentage of new Context objects
-uretprobe:/usr/lib/libpython3.13.so:PyContext_CopyCurrent {
+uretprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:PyContext_CopyCurrent {
     print_uretprobe(func, retval)
 }
-uprobe:/usr/lib/libpython3.13.so:PyContext_Copy {
+uprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:PyContext_Copy {
     print_uprobe(func, arg0)
 }
-uretprobe:/usr/lib/libpython3.13.so:PyContext_Copy {
+uretprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:PyContext_Copy {
     print_uretprobe(func, retval)
 }
 
 // These might be useful for watching the trace context for OTel python instrumented code
 /*
-uprobe:/usr/lib/libpython3.13.so:PyContextVar_Get {
+uprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:PyContextVar_Get {
     // ...
 }
-uprobe:/usr/lib/libpython3.13.so:PyContextVar_Set {
+uprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:PyContextVar_Set {
     // ...
 }
 */
@@ -78,10 +78,10 @@ uprobe:/usr/lib/libpython3.13.so:PyContextVar_Set {
 //
 // See https://github.com/python/cpython/blob/v3.13.9/Python/context.c#L112-L113
 /*
-uprobe:/usr/lib/libpython3.13.so:_PyContext_Enter {
+uprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:_PyContext_Enter {
     // ...
 }
-uprobe:/usr/lib/libpython3.13.so:_PyContext_Exit {
+uprobe:/usr/local/google/home/aaronabbott/.local/share/uv/python/cpython-3.13.6-linux-x86_64-gnu/bin/python3.13:_PyContext_Exit {
     // ...
 }
 */
