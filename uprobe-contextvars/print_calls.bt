@@ -1,46 +1,74 @@
 #define YELLOW "\033[33m"
 #define NC "\033[0m" // No Color (resets the terminal color)
 
+config = {
+    unstable_macro=enable;
+}
+
+// Consistent coloring for a ptr
+macro color_int(val) {
+    let $hash = val % 7;
+
+    // Use 256-color codes: \033[38;5;{ID}m
+    $hash == 0 ? "\033[38;5;196m" : // Bright Red
+    $hash == 1 ? "\033[38;5;46m"  : // Neon Green
+    $hash == 2 ? "\033[38;5;226m" : // Bright Yellow
+    $hash == 3 ? "\033[38;5;39m"  : // Bright Blue (easier to see than std blue)
+    $hash == 4 ? "\033[38;5;201m" : // Hot Pink
+    $hash == 5 ? "\033[38;5;51m"  : // Cyan
+                 "\033[38;5;208m"   // Orange
+}
+
+macro print_uprobe(func_name, ctx_ptr) {
+    printf("tid=%s%s%s %s ctx=%s%p%s\n", color_int(tid), tid, NC, func_name, color_int(ctx_ptr), ctx_ptr, NC);
+}
+macro print_uretprobe_void(func_name, ctx_ptr) {
+    printf("tid=%s%s%s %s return\n", color_int(tid), tid, NC, func_name);
+}
+macro print_uretprobe(func_name, ctx_ptr) {
+    printf("tid=%s%s%s %s -> ctx=%s%p%s\n", color_int(tid), tid, NC, func_name, color_int(ctx_ptr), ctx_ptr, NC);
+}
+
 // These are the official C API for enter/exiting a context, but is not called by the cpython
 // internals. Something like uvloop might use this.
 uprobe:/usr/lib/libpython3.13.so:PyContext_Enter {
-    printf("%stid=%s%s %s %s\n", YELLOW, tid, NC, func, args);
+    print_uprobe(func, arg0)
 }
 
 uprobe:/usr/lib/libpython3.13.so:PyContext_Exit {
-    printf("%stid=%s%s %s %s\n", YELLOW, tid, NC, func, args);
+     print_uprobe(func, arg0)
 }
 
 // This is the C implementation of contextvars.run() python function
 // https://github.com/python/cpython/blob/v3.13.9/Python/context.c#L648-L650. This plus the
 // PyContext_Enter/PyContext_Exit is probably the most reliable.
 uprobe:/usr/lib/libpython3.13.so:context_run* {
-    printf("%stid=%s%s %s %s\n", YELLOW, tid, NC, func, args);
+    print_uprobe(func, arg0);
 }
 uretprobe:/usr/lib/libpython3.13.so:context_run* {
-    printf("%stid=%s%s return %s\n", YELLOW, tid, NC, func);
+    print_uretprobe_void(func, retval);
 }
 
 // -----------
 
 // These might be useful for tracking parentage of new Context objects
 uretprobe:/usr/lib/libpython3.13.so:PyContext_CopyCurrent {
-    printf("%stid=%s%s %s retval = %p\n", YELLOW, tid, NC, func, retval);
+    print_uretprobe(func, retval)
 }
 uprobe:/usr/lib/libpython3.13.so:PyContext_Copy {
-    printf("%stid=%s%s %s %s\n", YELLOW, tid, NC, func, args);
+    print_uprobe(func, arg0)
 }
 uretprobe:/usr/lib/libpython3.13.so:PyContext_Copy {
-    printf("%stid=%s%s %s retval = %p\n", YELLOW, tid, NC, func, retval);
+    print_uretprobe(func, retval)
 }
 
 // These might be useful for watching the trace context for OTel python instrumented code
 /*
 uprobe:/usr/lib/libpython3.13.so:PyContextVar_Get {
-    printf("%s %s\n", func, args);
+    // ...
 }
 uprobe:/usr/lib/libpython3.13.so:PyContextVar_Set {
-    printf("%s %s\n", func, args);
+    // ...
 }
 */
 
@@ -51,9 +79,9 @@ uprobe:/usr/lib/libpython3.13.so:PyContextVar_Set {
 // See https://github.com/python/cpython/blob/v3.13.9/Python/context.c#L112-L113
 /*
 uprobe:/usr/lib/libpython3.13.so:_PyContext_Enter {
-    printf("tid=%s %s %s\n", tid, func, args);
+    // ...
 }
 uprobe:/usr/lib/libpython3.13.so:_PyContext_Exit {
-    printf("tid=%s %s %s\n", tid, func, args);
+    // ...
 }
 */
