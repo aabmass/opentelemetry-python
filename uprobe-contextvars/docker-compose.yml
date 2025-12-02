@@ -1,0 +1,31 @@
+# Docker compose file for bpftrace and some python webapps
+
+services:
+  bpftrace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    privileged: true
+    pid: "host"
+    network_mode: "host"
+    volumes:
+      - .:/app
+      - /sys/:/sys/
+    working_dir: /app
+    environment:
+      - DEBUGINFOD_URLS=https://debuginfod.archlinux.org
+    entrypoint: ["bpftrace", "-v", "print_calls.bt"]
+    
+
+  python:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - .:/app
+    working_dir: /app
+    entrypoint: ["uv", "run", "--script", "plain.py"]
+    depends_on:
+      - bpftrace

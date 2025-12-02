@@ -1,0 +1,59 @@
+#define YELLOW "\033[33m"
+#define NC "\033[0m" // No Color (resets the terminal color)
+
+// These are the official C API for enter/exiting a context, but is not called by the cpython
+// internals. Something like uvloop might use this.
+uprobe:/usr/lib/libpython3.13.so:PyContext_Enter {
+    printf("%stid=%s%s %s %s\n", YELLOW, tid, NC, func, args);
+}
+
+uprobe:/usr/lib/libpython3.13.so:PyContext_Exit {
+    printf("%stid=%s%s %s %s\n", YELLOW, tid, NC, func, args);
+}
+
+// This is the C implementation of contextvars.run() python function
+// https://github.com/python/cpython/blob/v3.13.9/Python/context.c#L648-L650. This plus the
+// PyContext_Enter/PyContext_Exit is probably the most reliable.
+uprobe:/usr/lib/libpython3.13.so:context_run* {
+    printf("%stid=%s%s %s %s\n", YELLOW, tid, NC, func, args);
+}
+uretprobe:/usr/lib/libpython3.13.so:context_run* {
+    printf("%stid=%s%s return %s\n", YELLOW, tid, NC, func);
+}
+
+// -----------
+
+// These might be useful for tracking parentage of new Context objects
+uretprobe:/usr/lib/libpython3.13.so:PyContext_CopyCurrent {
+    printf("%stid=%s%s %s retval = %p\n", YELLOW, tid, NC, func, retval);
+}
+uprobe:/usr/lib/libpython3.13.so:PyContext_Copy {
+    printf("%stid=%s%s %s %s\n", YELLOW, tid, NC, func, args);
+}
+uretprobe:/usr/lib/libpython3.13.so:PyContext_Copy {
+    printf("%stid=%s%s %s retval = %p\n", YELLOW, tid, NC, func, retval);
+}
+
+// These might be useful for watching the trace context for OTel python instrumented code
+/*
+uprobe:/usr/lib/libpython3.13.so:PyContextVar_Get {
+    printf("%s %s\n", func, args);
+}
+uprobe:/usr/lib/libpython3.13.so:PyContextVar_Set {
+    printf("%s %s\n", func, args);
+}
+*/
+
+// These are called by PyContext_Enter/PyContext_Exit and context_run internally. It seems to
+// get inlined in many production builds of python (e.g. on Debian and uv managed python), so
+// might not be reliable.
+//
+// See https://github.com/python/cpython/blob/v3.13.9/Python/context.c#L112-L113
+/*
+uprobe:/usr/lib/libpython3.13.so:_PyContext_Enter {
+    printf("tid=%s %s %s\n", tid, func, args);
+}
+uprobe:/usr/lib/libpython3.13.so:_PyContext_Exit {
+    printf("tid=%s %s %s\n", tid, func, args);
+}
+*/
