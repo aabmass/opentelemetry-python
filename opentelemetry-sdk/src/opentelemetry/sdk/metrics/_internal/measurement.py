@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from opentelemetry.attributes import _clean_attribute_value
 from opentelemetry.context import Context
-from opentelemetry.util.types import Attributes
+from opentelemetry.util.types import SanitizedAttributes
 
 _logger = getLogger(__name__)
 
@@ -36,19 +36,21 @@ class Measurement:
     time_unix_nano: int
     instrument: _Instrument
     context: Context
-    attributes: Attributes = None
+    attributes: SanitizedAttributes = None
 
     def __post_init__(self) -> None:
-        if self.attributes is not None:
-            if isinstance(self.attributes, Mapping):
-                object.__setattr__(
-                    self,
-                    "attributes",
-                    _clean_attribute_value(self.attributes, None),
-                )
-            else:
-                _logger.warning(
-                    "Invalid type '%s' for attributes. Expected a Mapping or None.",
-                    type(self.attributes),
-                )
-                object.__setattr__(self, "attributes", None)
+        attributes_unsanitized = self.attributes
+
+        if attributes_unsanitized is None:
+            return
+
+        if not isinstance(attributes_unsanitized, Mapping):
+            _logger.warning(
+                "Invalid type '%s' for attributes. Expected a Mapping or None.",
+                type(attributes_unsanitized),
+            )
+            object.__setattr__(self, "attributes", None)
+            return
+
+        attributes: SanitizedAttributes = _clean_attribute_value(attributes_unsanitized, None)
+        object.__setattr__(self, "attributes", attributes)

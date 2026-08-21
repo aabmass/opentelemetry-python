@@ -8,9 +8,9 @@ import logging
 import threading
 from collections.abc import Mapping, MutableMapping, Sequence
 from types import NoneType
-from typing import TYPE_CHECKING, Any, overload
+from typing import Any, overload
 
-from typing_extensions import assert_never, deprecated
+from typing_extensions import deprecated
 
 from opentelemetry.util import types
 
@@ -28,20 +28,20 @@ def _is_non_custom_str(key: Any) -> bool:
 def _clean_attribute_value(
     value: Mapping[str, types.AnyValue],
     max_string_value_length: int | None,
-) -> Mapping[str, types.AnyValue]: ...
+) -> Mapping[str, types.SanitizedAnyValue]: ...
 
 
 @overload
 def _clean_attribute_value(
     value: types.AnyValue,
     max_string_value_length: int | None,
-) -> types.AnyValue: ...
+) -> types.SanitizedAnyValue: ...
 
 
 def _clean_attribute_value(
     value: types.AnyValue,
     max_string_value_length: int | None,
-) -> types.AnyValue:
+) -> types.SanitizedAnyValue:
     """Recursively checks if an attribute value is valid and cleans it if required.
 
     String values are truncated to max_string_value_length if provided.
@@ -65,7 +65,7 @@ def _clean_attribute_value(
     if isinstance(value, Sequence):
         return tuple(_clean_attribute_value(v, max_string_value_length) for v in value)
     if isinstance(value, Mapping):
-        cleaned_mapping: dict[str, types.AnyValue] = {}
+        cleaned_mapping: dict[str, types.SanitizedAnyValue] = {}
         for key, val in value.items():
             if not key:
                 _logger.warning(
@@ -86,8 +86,8 @@ def _clean_attribute_value(
                     continue
             cleaned_mapping[key] = _clean_attribute_value(val, max_string_value_length)
         return cleaned_mapping
-    if TYPE_CHECKING:
-        assert_never(value)
+
+    types.assert_unsanitized_value(value)
     _logger.warning(
         "Invalid type `%s` for attribute value. Expected one of bool, str, None, bytes, int, float or a "
         "Mapping or Sequence of those types. Value's __str__ method will be called if it exists, otherwise the value will be replaced with None.",
@@ -191,13 +191,15 @@ class BoundedAttributes(MutableMapping[str, types.AnyValue]):
             with self._lock:
                 self.dropped += len(attributes)
             return
-        cleaned_attributes: Mapping[str, types.AnyValue] = _clean_attribute_value(attributes, self.max_value_len)
+        cleaned_attributes: Mapping[str, types.SanitizedAnyValue] = _clean_attribute_value(
+            attributes, self.max_value_len
+        )
         with self._lock:
             self.dropped += len(attributes) - len(cleaned_attributes)
             for key, value in cleaned_attributes.items():
                 self._setitem_locked(key, value)
 
-    def _setitem_locked(self, key: str, value: types.AnyValue) -> None:
+    def _setitem_locked(self, key: str, value: types.SanitizedAnyValue) -> None:
         if key in self._dict:
             del self._dict[key]
         if self.maxlen is not None and len(self._dict) >= self.maxlen:
