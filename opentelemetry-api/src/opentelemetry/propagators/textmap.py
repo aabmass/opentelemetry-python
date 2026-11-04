@@ -6,13 +6,14 @@ import typing
 from collections.abc import Iterable, Mapping, MutableMapping
 
 from opentelemetry.context.context import Context
+from opentelemetry.util._compat import SignatureCompatABC
 
 CarrierT = typing.TypeVar("CarrierT")
 # pylint: disable=invalid-name
 CarrierValT = list[str] | str
 
 
-class Getter(abc.ABC, typing.Generic[CarrierT]):
+class Getter(SignatureCompatABC, typing.Generic[CarrierT]):
     """This class implements a Getter that enables extracting propagated
     fields from a carrier.
     """
@@ -43,7 +44,7 @@ class Getter(abc.ABC, typing.Generic[CarrierT]):
         """
 
 
-class Setter(abc.ABC, typing.Generic[CarrierT]):
+class Setter(SignatureCompatABC, typing.Generic[CarrierT]):
     """This class implements a Setter that enables injecting propagated
     fields into a carrier.
     """
@@ -105,7 +106,7 @@ class DefaultSetter(Setter[MutableMapping[str, CarrierValT]]):
 default_setter: Setter[CarrierT] = DefaultSetter()  # type: ignore
 
 
-class TextMapPropagator(abc.ABC):
+class TextMapPropagator(SignatureCompatABC):
     """This class provides an interface that enables extracting and injecting
     context into headers of HTTP requests. HTTP frameworks and clients
     can integrate with TextMapPropagator by providing the object containing the

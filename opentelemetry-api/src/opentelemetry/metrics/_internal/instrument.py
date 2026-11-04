@@ -18,6 +18,7 @@ from typing import (
 from opentelemetry import metrics
 from opentelemetry.context import Context
 from opentelemetry.metrics._internal.observation import Observation
+from opentelemetry.util._compat import SignatureCompatABC
 from opentelemetry.util.types import (
     Attributes,
 )
@@ -50,7 +51,7 @@ InstrumentT = TypeVar("InstrumentT", bound="Instrument")
 CallbackT = Callable[[CallbackOptions], Iterable[Observation]] | Generator[Iterable[Observation], CallbackOptions, None]
 
 
-class Instrument(ABC):
+class Instrument(SignatureCompatABC):
     """Abstract class that serves as base for all instruments."""
 
     @abstractmethod

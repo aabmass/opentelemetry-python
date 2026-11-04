@@ -13,6 +13,7 @@ from collections.abc import Iterator, Mapping, Sequence
 
 from opentelemetry.trace.status import Status, StatusCode
 from opentelemetry.util import types
+from opentelemetry.util._compat import SignatureCompatABC
 
 # The key MUST begin with a lowercase letter or a digit,
 # and can only contain lowercase letters (a-z), digits (0-9),
@@ -57,7 +58,7 @@ def _is_valid_pair(key: str, value: str) -> bool:
     )
 
 
-class Span(abc.ABC):
+class Span(SignatureCompatABC):
     """A span represents a single operation within a trace."""
 
     @abc.abstractmethod
